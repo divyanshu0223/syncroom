@@ -2,6 +2,30 @@ import { Request, Response, NextFunction } from 'express';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
+export function isOriginAllowed(origin: string | undefined): boolean {
+  if (!origin) return true;
+  const normalized = origin.replace(/\/$/, '');
+  const allowedOrigins = getAllowedOrigins();
+
+  if (allowedOrigins.includes(normalized)) return true;
+
+  try {
+    const url = new URL(normalized);
+    if (
+      url.hostname.endsWith('.github.io') ||
+      url.hostname.endsWith('.onrender.com') ||
+      url.hostname === 'localhost' ||
+      url.hostname === '127.0.0.1'
+    ) {
+      return true;
+    }
+  } catch {
+    // Ignore invalid URL formatting
+  }
+
+  return !isProduction;
+}
+
 export function getAllowedOrigins(): string[] {
   const envOrigins = [
     process.env.CLIENT_ORIGIN,
@@ -10,7 +34,8 @@ export function getAllowedOrigins(): string[] {
   ];
 
   const list: string[] = [
-    'https://ramkushwah1214.github.io',
+    'https://divyanshu0223.github.io',
+    'https://syncroom-j2lf.onrender.com',
   ];
 
   for (const envVal of envOrigins) {
@@ -43,12 +68,9 @@ export function getAllowedOrigins(): string[] {
  */
 export function corsMiddleware(req: Request, res: Response, next: NextFunction) {
   const requestOrigin = req.headers.origin;
-  const allowedOrigins = getAllowedOrigins();
 
   if (requestOrigin) {
-    const isAllowed =
-      allowedOrigins.includes(requestOrigin) ||
-      (!isProduction && (requestOrigin.includes('localhost') || requestOrigin.includes('127.0.0.1')));
+    const isAllowed = isOriginAllowed(requestOrigin);
 
     if (isAllowed) {
       res.setHeader('Access-Control-Allow-Origin', requestOrigin);
@@ -90,17 +112,12 @@ export function validateWebSocketOrigin(origin: string | undefined): {
     return { isValid: true };
   }
 
-  const normalized = origin.replace(/\/$/, '');
-  const allowedOrigins = getAllowedOrigins();
-
-  const isAllowed =
-    allowedOrigins.includes(normalized) ||
-    (!isProduction && (normalized.includes('localhost') || normalized.includes('127.0.0.1')));
+  const isAllowed = isOriginAllowed(origin);
 
   if (!isAllowed && isProduction) {
     return {
       isValid: false,
-      reason: `WebSocket origin '${normalized}' is not in allowed origins list: ${allowedOrigins.join(', ')}`,
+      reason: `WebSocket origin '${origin}' is not permitted`,
     };
   }
 
