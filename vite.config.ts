@@ -5,7 +5,7 @@ import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(({ command }) => {
-  const base = process.env.VITE_BASE || '/';
+  const base = process.env.VITE_BASE || './';
 
   return {
     base,
