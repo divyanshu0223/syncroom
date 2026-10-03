@@ -6,7 +6,7 @@ import { AdminControls } from './AdminControls';
 import { ListeningView } from './ListeningView';
 import { AudioVisualizer } from './AudioVisualizer';
 import { VolumeControl } from './VolumeControl';
-import { Sparkles, Music, Radio, VolumeX, AlertCircle, ExternalLink, Loader2 } from 'lucide-react';
+import { Sparkles, Music, Radio, VolumeX, Volume2, AlertCircle, ExternalLink, Loader2 } from 'lucide-react';
 import { useSynchronizedPlayback } from '../hooks/useSynchronizedPlayback';
 import { spotifyMusicProvider } from '../services/music/SpotifyMusicProvider';
 import { youtubePlaybackProvider } from '../audio/YouTubePlaybackProvider';
@@ -26,7 +26,7 @@ interface MusicPlayerProps {
   repeatMode?: 'off' | 'all' | 'one';
   onToggleRepeat?: () => void;
   onOpenAddTrack?: () => void;
-  onSwitchProvider?: (provider: 'spotify' | 'youtube') => void;
+  onSwitchProvider?: (provider: 'spotify' | 'youtube' | 'audio') => void;
   className?: string;
 }
 
@@ -465,6 +465,19 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
                 <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
               </svg>
               <span>YouTube</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSwitchProvider('audio')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                track.provider === 'audio' || track.provider === 'local' || track.provider === 'licensed'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+              title="Play using Web Audio API"
+            >
+              <Volume2 className="w-3 h-3" />
+              <span>Web Audio</span>
             </button>
           </div>
         )}

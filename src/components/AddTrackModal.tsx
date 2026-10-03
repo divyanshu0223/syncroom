@@ -4,7 +4,76 @@ import { spotifyMusicProvider } from '../services/music/SpotifyMusicProvider';
 import { youtubeMusicProvider } from '../services/music/YouTubeMusicProvider';
 import { parseSpotifyTrackId, parseYouTubeVideoId } from '../services/music/MusicProvider';
 import { ArtworkDisplay } from './ArtworkDisplay';
-import { X, Search, Plus, Check, Music, Loader2, Link2, AlertCircle, ExternalLink } from 'lucide-react';
+import { X, Search, Plus, Check, Music, Loader2, Link2, AlertCircle, ExternalLink, Upload, Volume2, Radio, FileAudio } from 'lucide-react';
+
+const WEB_AUDIO_DEMOS: Track[] = [
+  {
+    id: 'demo-ambient-chill',
+    provider: 'audio',
+    providerTrackId: 'demo-ambient-chill',
+    title: 'Midnight Lofi Chill',
+    artist: 'SyncRoom Soundscape',
+    artists: ['SyncRoom Soundscape'],
+    album: 'Web Audio Sessions',
+    albumArtUrl: null,
+    duration: 180,
+    durationMs: 180000,
+    externalUrl: 'https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3?filename=lofi-study-112191.mp3',
+    isPlayable: true,
+    playbackStatus: 'AVAILABLE',
+    audioSource: 'local',
+    coverGradient: {
+      from: '#1e3a8a',
+      to: '#3b82f6',
+      accent: '#60a5fa',
+      pattern: 'waves',
+    },
+  },
+  {
+    id: 'demo-synthwave-dream',
+    provider: 'audio',
+    providerTrackId: 'demo-synthwave-dream',
+    title: 'Synthwave Cyber Dream',
+    artist: 'Retro Horizon',
+    artists: ['Retro Horizon'],
+    album: 'Neon City',
+    albumArtUrl: null,
+    duration: 154,
+    durationMs: 154000,
+    externalUrl: 'https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3?filename=synthwave-80s-110045.mp3',
+    isPlayable: true,
+    playbackStatus: 'AVAILABLE',
+    audioSource: 'local',
+    coverGradient: {
+      from: '#4c1d95',
+      to: '#8b5cf6',
+      accent: '#c084fc',
+      pattern: 'geometry',
+    },
+  },
+  {
+    id: 'demo-acoustic-sunrise',
+    provider: 'audio',
+    providerTrackId: 'demo-acoustic-sunrise',
+    title: 'Sunrise Acoustic Melody',
+    artist: 'Peaceful Strings',
+    artists: ['Peaceful Strings'],
+    album: 'Morning Reflections',
+    albumArtUrl: null,
+    duration: 142,
+    durationMs: 142000,
+    externalUrl: 'https://cdn.pixabay.com/download/audio/2021/08/04/audio_12b0c7443c.mp3?filename=acoustic-guitars-ambient-uplifting-11270.mp3',
+    isPlayable: true,
+    playbackStatus: 'AVAILABLE',
+    audioSource: 'local',
+    coverGradient: {
+      from: '#78350f',
+      to: '#f59e0b',
+      accent: '#fbbf24',
+      pattern: 'rings',
+    },
+  },
+];
 
 interface AddTrackModalProps {
   isOpen: boolean;
@@ -21,7 +90,7 @@ export const AddTrackModal: React.FC<AddTrackModalProps> = ({
   existingTrackIds = [],
   onOpenImportSpotify,
 }) => {
-  const [activeTab, setActiveTab] = useState<'search' | 'url'>('search');
+  const [activeTab, setActiveTab] = useState<'search' | 'url' | 'audio'>('search');
   const [searchProvider, setSearchProvider] = useState<'spotify' | 'youtube'>('spotify');
 
   // Search state
@@ -48,12 +117,43 @@ export const AddTrackModal: React.FC<AddTrackModalProps> = ({
       return;
     }
 
+    // Check Direct Audio URL (.mp3, .wav, .ogg, .m4a)
+    const isDirectAudio = trimmed.match(/^https?:\/\/.*\.(mp3|wav|ogg|m4a|aac)(\?.*)?$/i);
+    if (isDirectAudio) {
+      const filename = trimmed.split('/').pop()?.split('?')[0] || 'Direct Audio Stream';
+      const cleanTitle = decodeURIComponent(filename.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '));
+      const audioTrack: Track = {
+        id: `audio-${Date.now()}`,
+        provider: 'audio',
+        providerTrackId: trimmed,
+        title: cleanTitle || 'Web Audio Stream',
+        artist: 'Direct Audio Stream',
+        artists: ['Direct Audio Stream'],
+        album: 'Web Audio API',
+        albumArtUrl: null,
+        duration: 180,
+        durationMs: 180000,
+        externalUrl: trimmed,
+        isPlayable: true,
+        playbackStatus: 'AVAILABLE',
+        audioSource: 'local',
+        coverGradient: {
+          from: '#1e3a8a',
+          to: '#3b82f6',
+          accent: '#60a5fa',
+          pattern: 'waves',
+        },
+      };
+      setUrlResolvedTrack(audioTrack);
+      return;
+    }
+
     // Check Spotify first
     const { trackId: spotifyTrackId } = parseSpotifyTrackId(trimmed);
     const { videoId: youtubeVideoId } = parseYouTubeVideoId(trimmed);
 
     if (!spotifyTrackId && !youtubeVideoId) {
-      setUrlError('Invalid link format. Supported: Spotify track links or YouTube video links (e.g. https://youtu.be/... or https://youtube.com/watch?v=...)');
+      setUrlError('Invalid link format. Supported: Spotify track links, YouTube video links, or direct audio URLs (.mp3, .wav, .ogg).');
       setUrlResolvedTrack(null);
       return;
     }
@@ -86,6 +186,56 @@ export const AddTrackModal: React.FC<AddTrackModalProps> = ({
       setIsResolvingUrl(false);
     }
   }, []);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const objectUrl = URL.createObjectURL(file);
+    const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+
+    const newTrack: Track = {
+      id: `audio-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      provider: 'audio',
+      providerTrackId: file.name,
+      title: cleanTitle || 'Uploaded Audio Track',
+      artist: 'Local Device File',
+      artists: ['Local Device File'],
+      album: 'Local Uploads',
+      albumArtUrl: null,
+      duration: 180,
+      durationMs: 180000,
+      externalUrl: objectUrl,
+      isPlayable: true,
+      playbackStatus: 'AVAILABLE',
+      audioSource: 'local',
+      coverGradient: {
+        from: '#1e3a8a',
+        to: '#3b82f6',
+        accent: '#60a5fa',
+        pattern: 'waves',
+      },
+    };
+
+    const tempAudio = new Audio();
+    tempAudio.src = objectUrl;
+    tempAudio.onloadedmetadata = () => {
+      if (tempAudio.duration && Number.isFinite(tempAudio.duration)) {
+        newTrack.duration = Math.round(tempAudio.duration);
+        newTrack.durationMs = Math.round(tempAudio.duration * 1000);
+      }
+      onAddTrack(newTrack);
+      setJustAddedId(newTrack.id);
+      setTimeout(() => setJustAddedId(null), 2500);
+    };
+    tempAudio.onerror = () => {
+      onAddTrack(newTrack);
+      setJustAddedId(newTrack.id);
+      setTimeout(() => setJustAddedId(null), 2500);
+    };
+
+    e.target.value = '';
+  };
 
   const lastExecutedSearchRef = useRef<string>('');
 
@@ -249,7 +399,7 @@ export const AddTrackModal: React.FC<AddTrackModalProps> = ({
               Add Songs to Queue
             </h3>
             <p className="text-xs text-neutral-400 mt-0.5">
-              Choose <span className="text-[#1ed760] font-medium">Spotify</span> or <span className="text-[#ff4e4e] font-medium">YouTube</span> for any song
+              Choose <span className="text-[#1ed760] font-medium">Spotify</span>, <span className="text-[#ff4e4e] font-medium">YouTube</span>, or <span className="text-blue-400 font-medium">Web Audio</span>
             </p>
           </div>
           <button
@@ -262,24 +412,24 @@ export const AddTrackModal: React.FC<AddTrackModalProps> = ({
           </button>
         </div>
 
-        {/* Tab Switcher */}
+        {/* Tab Switcher: [ Search Catalog ] [ Paste Link ] [ Web Audio ] */}
         <div className="flex items-center gap-1.5 p-1 bg-neutral-950/80 rounded-xl border border-neutral-800/80 my-3">
           <button
             type="button"
             onClick={() => setActiveTab('search')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-medium transition-all ${
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-medium transition-all ${
               activeTab === 'search'
                 ? 'bg-neutral-800 text-white shadow-sm font-semibold'
                 : 'text-neutral-400 hover:text-neutral-200'
             }`}
           >
             <Search className="w-3.5 h-3.5 text-amber-400" />
-            <span>Search Catalog</span>
+            <span>Search</span>
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('url')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-medium transition-all ${
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-medium transition-all ${
               activeTab === 'url'
                 ? 'bg-neutral-800 text-white shadow-sm font-semibold'
                 : 'text-neutral-400 hover:text-neutral-200'
@@ -287,6 +437,18 @@ export const AddTrackModal: React.FC<AddTrackModalProps> = ({
           >
             <Link2 className="w-3.5 h-3.5 text-amber-400" />
             <span>Paste Link</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('audio')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-medium transition-all ${
+              activeTab === 'audio'
+                ? 'bg-blue-600/30 text-blue-300 border border-blue-500/40 shadow-sm font-semibold'
+                : 'text-neutral-400 hover:text-neutral-200'
+            }`}
+          >
+            <Volume2 className="w-3.5 h-3.5 text-blue-400" />
+            <span>Web Audio</span>
           </button>
         </div>
 
@@ -736,6 +898,20 @@ export const AddTrackModal: React.FC<AddTrackModalProps> = ({
                           )}
                         </button>
                       </>
+                    ) : urlResolvedTrack.provider === 'audio' ? (
+                      <button
+                        type="button"
+                        onClick={() => handleAdd(urlResolvedTrack, 'resolved-audio')}
+                        disabled={justAddedId === 'resolved-audio'}
+                        className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                          justAddedId === 'resolved-audio'
+                            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                            : 'bg-blue-600 text-white hover:bg-blue-500 shadow-md shadow-blue-600/20'
+                        }`}
+                      >
+                        <Volume2 className="w-3.5 h-3.5" />
+                        <span>{justAddedId === 'resolved-audio' ? 'Added to Queue!' : 'Add Web Audio'}</span>
+                      </button>
                     ) : (
                       <button
                         type="button"
@@ -761,9 +937,111 @@ export const AddTrackModal: React.FC<AddTrackModalProps> = ({
             {!urlResolvedTrack && !urlError && !isResolvingUrl && (
               <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-neutral-500 text-xs gap-2">
                 <Music className="w-8 h-8 text-neutral-700" />
-                <p>Paste any real Spotify song link or YouTube video link above.</p>
+                <p>Paste any Spotify link, YouTube link, or direct audio link (.mp3, .wav) above.</p>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Tab 3: Web Audio */}
+        {activeTab === 'audio' && (
+          <div className="flex-1 flex flex-col gap-4 overflow-y-auto min-h-[300px] pr-1">
+            {/* Upload Area */}
+            <div className="bg-neutral-950/60 border border-neutral-800/80 rounded-2xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Volume2 className="w-4 h-4 text-blue-400" />
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-neutral-300">
+                  Direct Web Audio Pipeline
+                </h4>
+              </div>
+              <p className="text-xs text-neutral-400 mb-3">
+                Upload any audio file directly from your device to play in the room via Web Audio API.
+              </p>
+
+              <input
+                type="file"
+                accept="audio/*"
+                id="syncroom-audio-upload-input"
+                className="hidden"
+                onChange={handleFileUpload}
+              />
+              <label
+                htmlFor="syncroom-audio-upload-input"
+                className="cursor-pointer border-2 border-dashed border-blue-500/30 hover:border-blue-400 bg-blue-950/20 hover:bg-blue-950/40 rounded-xl p-4 flex flex-col items-center justify-center gap-2 text-center transition-all group"
+              >
+                <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
+                  <Upload className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-white">Choose Audio File</p>
+                  <p className="text-[11px] text-neutral-400">MP3, WAV, OGG, M4A, or FLAC</p>
+                </div>
+                <span className="px-3 py-1 rounded-lg bg-blue-600 text-white text-[11px] font-semibold shadow-sm mt-0.5">
+                  Browse Files
+                </span>
+              </label>
+            </div>
+
+            {/* Curated Royalty-Free Demo Tracks */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
+                  Instant Web Audio Tracks
+                </span>
+                <span className="text-[10px] text-blue-400 bg-blue-950/80 px-2 py-0.5 rounded-full border border-blue-800/60">
+                  No Login Required
+                </span>
+              </div>
+
+              <div className="space-y-1.5">
+                {WEB_AUDIO_DEMOS.map((demo) => {
+                  const isAdded = justAddedId === demo.id || existingTrackIds.includes(demo.id);
+                  return (
+                    <div
+                      key={demo.id}
+                      className="flex items-center justify-between p-2.5 rounded-xl bg-neutral-950/40 border border-neutral-800/80 hover:border-neutral-700 transition-all group"
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1 mr-2">
+                        <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0">
+                          <ArtworkDisplay track={demo} size="sm" className="w-full h-full" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-white truncate group-hover:text-blue-300 transition-colors">
+                            {demo.title}
+                          </p>
+                          <p className="text-[11px] text-neutral-400 truncate">
+                            {demo.artist} &bull; {formatDuration(demo.duration)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleAdd(demo)}
+                        disabled={isAdded}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-all ${
+                          isAdded
+                            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                            : 'bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-600/20'
+                        }`}
+                      >
+                        {isAdded ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-blue-300" />
+                            <span>Added</span>
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Add</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
 

@@ -43,8 +43,8 @@ interface RoomContextType {
   reorderQueue: (orderedIds: string[]) => void;
   clearQueue: () => void;
   playNow: (item: QueueItem) => void;
-  playTrackWithProvider: (track: Track, provider: 'spotify' | 'youtube') => Promise<void>;
-  switchCurrentTrackProvider: (targetProvider: 'spotify' | 'youtube') => Promise<void>;
+  playTrackWithProvider: (track: Track, provider: 'spotify' | 'youtube' | 'audio') => Promise<void>;
+  switchCurrentTrackProvider: (targetProvider: 'spotify' | 'youtube' | 'audio') => Promise<void>;
   moveQueueUp: (index: number) => void;
   moveQueueDown: (index: number) => void;
   removeUser: (userId: string) => void;
@@ -1124,7 +1124,7 @@ export const RoomProvider: React.FC<{ children: React.ReactNode }> = ({ children
     selectTrack(item.track.id);
   };
 
-  const switchCurrentTrackProvider = async (targetProvider: 'spotify' | 'youtube') => {
+  const switchCurrentTrackProvider = async (targetProvider: 'spotify' | 'youtube' | 'audio') => {
     if (!currentRoom || !currentRoom.currentTrack) return;
     if (currentUser?.role !== 'admin') {
       showToast({
@@ -1232,12 +1232,58 @@ export const RoomProvider: React.FC<{ children: React.ReactNode }> = ({ children
         title: 'Playing via Spotify',
         description: `Now playing "${currentTrack.title}" via Spotify Web Player.`,
       });
+    } else if (targetProvider === 'audio') {
+      try {
+        youtubePlaybackProvider.pause();
+      } catch {}
+      try {
+        spotifyPlaybackProvider.pause();
+      } catch {}
+
+      playbackManager.setProvider(webAudioPlaybackProvider);
+
+      const updatedTrack: Track = {
+        ...currentTrack,
+        id: currentTrack.provider === 'audio' ? currentTrack.id : `audio-${currentTrack.id}`,
+        provider: 'audio',
+        audioSource: 'local',
+      };
+
+      await webAudioPlaybackProvider.initialize();
+      await webAudioPlaybackProvider.loadTrack(updatedTrack, currentRoom.playerState.position);
+
+      socketService.send({
+        type: 'ADMIN_SET_CURRENT_TRACK',
+        track: updatedTrack,
+        autoplay: currentRoom.playerState.isPlaying,
+      });
+
+      showToast({
+        type: 'success',
+        title: 'Playing via Web Audio',
+        description: `Now playing "${currentTrack.title}" via Web Audio API.`,
+      });
     }
   };
 
-  const playTrackWithProvider = async (track: Track, targetProvider: 'spotify' | 'youtube') => {
+  const playTrackWithProvider = async (track: Track, targetProvider: 'spotify' | 'youtube' | 'audio') => {
     if (currentUser?.role !== 'admin') {
       showToast({ type: 'error', title: 'Admin Only', description: 'Only the room host can start playback.' });
+      return;
+    }
+
+    if (targetProvider === 'audio') {
+      try { spotifyPlaybackProvider.pause(); } catch {}
+      try { youtubePlaybackProvider.pause(); } catch {}
+      playbackManager.setProvider(webAudioPlaybackProvider);
+      await webAudioPlaybackProvider.initialize();
+      await webAudioPlaybackProvider.loadTrack(track, 0);
+      await webAudioPlaybackProvider.play();
+      socketService.send({
+        type: 'ADMIN_SET_CURRENT_TRACK',
+        track,
+        autoplay: true,
+      });
       return;
     }
 

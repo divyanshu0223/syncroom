@@ -40,7 +40,7 @@ interface RoomViewProps {
   onEndRoom?: () => void;
   activities?: ActivityItem[];
   onLoadActivities?: () => void;
-  onSwitchProvider?: (provider: 'spotify' | 'youtube') => Promise<void>;
+  onSwitchProvider?: (provider: 'spotify' | 'youtube' | 'audio') => Promise<void>;
 }
 
 export const RoomView: React.FC<RoomViewProps> = ({
