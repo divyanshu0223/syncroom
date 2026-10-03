@@ -2030,7 +2030,40 @@ var RoomManager = class {
     if (!rawToken) {
       throw new Error("SESSION_NOT_FOUND");
     }
-    const dbRestored = await dbRepository.validateAndRestoreSession(rawToken);
+    const inMem = this.sessions.get(rawToken);
+    if (inMem) {
+      const room2 = this.roomsById.get(inMem.roomId);
+      if (room2) {
+        const user2 = room2.getUser(inMem.userId);
+        if (user2) {
+          user2.connected = true;
+          user2.lastSeen = Date.now();
+          this.registerConnection(ws, user2.id, rawToken, room2.id);
+          this.broadcastToRoom(
+            room2.id,
+            {
+              type: "USER_UPDATED",
+              user: {
+                id: user2.id,
+                name: user2.name,
+                role: user2.role,
+                joinedAt: user2.lastSeen,
+                isOnline: true,
+                device: user2.device,
+                driftMs: user2.driftMs
+              }
+            },
+            user2.id
+          );
+          return { room: room2, user: user2, sessionToken: rawToken };
+        }
+      }
+    }
+    let dbRestored = null;
+    try {
+      dbRestored = await dbRepository.validateAndRestoreSession(rawToken);
+    } catch {
+    }
     if (!dbRestored) {
       throw new Error("SESSION_NOT_FOUND");
     }
@@ -5377,13 +5410,13 @@ function securityHeadersMiddleware(req, res, next) {
   }
   const cspDirectives = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.scdn.co",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.scdn.co https://www.youtube.com https://s.ytimg.com",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com data:",
-    "img-src 'self' data: blob: https://*.scdn.co https://*.spotifycdn.com https://i.scdn.co https://mosaic.scdn.co https://images.unsplash.com",
+    "img-src 'self' data: blob: https://*.scdn.co https://*.spotifycdn.com https://i.scdn.co https://mosaic.scdn.co https://images.unsplash.com https://i.ytimg.com https://*.ytimg.com https://*.youtube.com",
     "media-src 'self' data: blob: https: https://*.scdn.co https://*.spotifycdn.com",
-    "connect-src 'self' ws: wss: https://*.spotify.com https://*.scdn.co https://api.spotify.com https://accounts.spotify.com wss://*.spotify.com wss://*.dealer.spotify.com https://*.spotifycdn.com",
-    "frame-src 'self' https://sdk.scdn.co https://accounts.spotify.com https://open.spotify.com",
+    "connect-src 'self' ws: wss: https://*.spotify.com https://*.scdn.co https://api.spotify.com https://accounts.spotify.com wss://*.spotify.com wss://*.dealer.spotify.com https://*.spotifycdn.com https://*.youtube.com https://*.google.com https://*.googleapis.com",
+    "frame-src 'self' https://sdk.scdn.co https://accounts.spotify.com https://open.spotify.com https://www.youtube.com https://www.youtube-nocookie.com",
     "frame-ancestors 'self'",
     "object-src 'none'",
     "base-uri 'self'"

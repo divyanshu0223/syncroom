@@ -189,6 +189,8 @@ export async function startServer() {
     // Cache hashed assets for 1 year, never cache index.html
     const assetsPath = path.join(distPath, 'assets');
     app.use('/assets', express.static(assetsPath, { maxAge: '1y', immutable: true }));
+    app.use('/syncroom/assets', express.static(assetsPath, { maxAge: '1y', immutable: true }));
+    app.use('/syncroom', express.static(distPath, { maxAge: 0 }));
     app.use(express.static(distPath, { maxAge: 0 }));
     app.get('*', (_req, res) => {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
