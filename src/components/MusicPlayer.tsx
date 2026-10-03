@@ -288,7 +288,7 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
         <div className="w-full mb-3 z-20 px-3 py-1.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-[11px] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            <span className="font-medium">Playing via YouTube Player</span>
+            <span className="font-medium">Playing YouTube Audio</span>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -441,30 +441,29 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
         )}
       </div>
 
-      {/* Large Music Artwork or Official YouTube Player */}
-      <div className="my-2 sm:my-4 w-full flex justify-center z-10">
-        {track.provider === 'youtube' && (track.youtubeVideoId || track.providerTrackId) ? (
-          <div className="w-full max-w-md aspect-video rounded-2xl overflow-hidden shadow-2xl border border-neutral-800 bg-black relative flex items-center justify-center">
-            <iframe
-              id="syncroom-youtube-iframe"
-              key={track.youtubeVideoId || track.providerTrackId}
-              src={`https://www.youtube.com/embed/${track.youtubeVideoId || track.providerTrackId}?enablejsapi=1&autoplay=${playerState.isPlaying ? 1 : 0}&playsinline=1&controls=1&rel=0&modestbranding=1&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}`}
-              title={track.title}
-              className="w-full h-full border-0 rounded-2xl"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              referrerPolicy="strict-origin-when-cross-origin"
-              ref={handleIframeRef}
-            />
-          </div>
-        ) : (
-          <ArtworkDisplay
-            track={track}
-            isPlaying={playerState.isPlaying}
-            size="lg"
-            showVinylPeek={true}
+      {/* Background YouTube Audio Engine (Pure Audio - No Video) */}
+      {track.provider === 'youtube' && (track.youtubeVideoId || track.providerTrackId) && (
+        <div className="absolute -top-[9999px] -left-[9999px] w-1 h-1 pointer-events-none opacity-0 overflow-hidden" aria-hidden="true">
+          <iframe
+            id="syncroom-youtube-iframe"
+            key={track.youtubeVideoId || track.providerTrackId}
+            src={`https://www.youtube.com/embed/${track.youtubeVideoId || track.providerTrackId}?enablejsapi=1&autoplay=${playerState.isPlaying ? 1 : 0}&playsinline=1&controls=0&rel=0&modestbranding=1&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}`}
+            title={track.title}
+            className="w-1 h-1 border-0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope"
+            ref={handleIframeRef}
           />
-        )}
+        </div>
+      )}
+
+      {/* Large Music Artwork (Vinyl record + Album art - Pure Music Experience) */}
+      <div className="my-2 sm:my-4 w-full flex justify-center z-10">
+        <ArtworkDisplay
+          track={track}
+          isPlaying={playerState.isPlaying}
+          size="lg"
+          showVinylPeek={true}
+        />
       </div>
 
       {/* Song title & Artist info */}
