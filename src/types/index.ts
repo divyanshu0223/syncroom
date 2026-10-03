@@ -23,7 +23,7 @@ export type RestrictionReason = 'market' | 'product' | 'explicit' | 'unknown' | 
 
 export interface Track {
   id: string;
-  provider: 'spotify' | 'local' | 'licensed' | 'youtube';
+  provider: 'spotify' | 'local' | 'licensed' | 'youtube' | 'audio';
   providerTrackId: string;
 
   title: string;
@@ -42,7 +42,7 @@ export interface Track {
   playbackStatus: PlaybackStatus;
   restrictionReason?: RestrictionReason;
   spotifyIsPlayable?: boolean | null;
-  audioSource: 'spotify' | 'licensed' | 'local' | 'unavailable' | 'youtube';
+  audioSource: 'spotify' | 'licensed' | 'local' | 'unavailable' | 'youtube' | 'audio';
   youtubeVideoId?: string;
 
   // Procedural gradient styling fallback for UI artwork display

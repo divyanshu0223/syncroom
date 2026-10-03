@@ -48,7 +48,7 @@ export class SyncEngine {
       }
 
       if (
-        (provider.id === 'spotify' || provider.id === 'youtube') &&
+        (provider.id === 'spotify' || provider.id === 'youtube' || provider.id === 'audio') &&
         status === 'PLAYER_READY' &&
         (this.pendingPlaybackState || this.currentPlaybackState?.isPlaying)
       ) {
@@ -76,7 +76,7 @@ export class SyncEngine {
           if (this.currentPlaybackState?.isPlaying) {
             const provider = playbackManager.getProvider();
             // If the provider was paused by the browser while backgrounded, resume it cleanly without restarting
-            if (provider.id === 'youtube' || provider.id === 'spotify') {
+            if (provider.id === 'youtube' || provider.id === 'spotify' || provider.id === 'audio') {
               if (provider.getStatus() === 'PAUSED' || provider.getStatus() === 'PLAYER_READY') {
                 provider.play().catch(() => {});
               }
@@ -217,10 +217,10 @@ export class SyncEngine {
     }
 
     const provider = playbackManager.getProvider();
-    const isManagedProvider = provider.id === 'spotify' || provider.id === 'youtube';
+    const isManagedProvider = provider.id === 'spotify' || provider.id === 'youtube' || provider.id === 'audio';
 
     if (isManagedProvider) {
-      // Pause HTML audio element
+      // Pause fallback audio
       this.audio.pause();
 
       if (!provider.isConfigured) {
@@ -434,7 +434,7 @@ export class SyncEngine {
     const expectedPosition = this.calculateExpectedPosition(state, estimatedServerTime);
 
     const provider = playbackManager.getProvider();
-    if (provider.id === 'spotify' || provider.id === 'youtube') {
+    if (provider.id === 'spotify' || provider.id === 'youtube' || provider.id === 'audio') {
       if (!provider.isConfigured) return;
       if (provider.getStatus() !== 'PLAYING') return; // Do not drift-seek while buffering or paused
       const actualPosition = provider.getPosition();

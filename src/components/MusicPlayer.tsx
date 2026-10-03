@@ -421,10 +421,16 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold ${
               track.provider === 'youtube'
                 ? 'bg-red-500/20 text-red-300 border border-red-500/30'
-                : 'bg-[#1db954]/20 text-[#1ed760] border border-[#1db954]/30'
+                : track.provider === 'audio' || track.provider === 'local' || track.provider === 'licensed'
+                  ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                  : 'bg-[#1db954]/20 text-[#1ed760] border border-[#1db954]/30'
             }`}
           >
-            {track.provider === 'youtube' ? 'YouTube' : 'Spotify'}
+            {track.provider === 'youtube'
+              ? 'YouTube'
+              : track.provider === 'audio' || track.provider === 'local' || track.provider === 'licensed'
+                ? 'Web Audio'
+                : 'Spotify'}
           </span>
         </div>
 

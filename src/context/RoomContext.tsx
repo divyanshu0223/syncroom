@@ -9,6 +9,7 @@ import { audioEngine } from '../audio/AudioEngine';
 import { playbackManager } from '../audio/PlaybackProvider';
 import { spotifyPlaybackProvider } from '../audio/SpotifyPlaybackProvider';
 import { youtubePlaybackProvider } from '../audio/YouTubePlaybackProvider';
+import { webAudioPlaybackProvider } from '../audio/WebAudioPlaybackProvider';
 import { youtubeMusicProvider } from '../services/music/YouTubeMusicProvider';
 import { spotifyMusicProvider } from '../services/music/SpotifyMusicProvider';
 import { serverClock } from '../services/serverClock';
@@ -325,6 +326,13 @@ export const RoomProvider: React.FC<{ children: React.ReactNode }> = ({ children
             youtubePlaybackProvider.initialize().catch(() => {});
           } else if (msg.room.currentTrack?.provider === 'spotify') {
             playbackManager.setProvider(spotifyPlaybackProvider);
+          } else if (
+            msg.room.currentTrack?.provider === 'audio' ||
+            msg.room.currentTrack?.provider === 'local' ||
+            msg.room.currentTrack?.provider === 'licensed'
+          ) {
+            playbackManager.setProvider(webAudioPlaybackProvider);
+            webAudioPlaybackProvider.initialize().catch(() => {});
           }
 
           if (msg.room.playerState) {
@@ -446,6 +454,12 @@ export const RoomProvider: React.FC<{ children: React.ReactNode }> = ({ children
               youtubePlaybackProvider.initialize().catch(() => {});
             } else if (nextTrack.provider === 'spotify' && playbackManager.getProvider().id !== 'spotify') {
               playbackManager.setProvider(spotifyPlaybackProvider);
+            } else if (
+              (nextTrack.provider === 'audio' || nextTrack.provider === 'local' || nextTrack.provider === 'licensed') &&
+              playbackManager.getProvider().id !== 'audio'
+            ) {
+              playbackManager.setProvider(webAudioPlaybackProvider);
+              webAudioPlaybackProvider.initialize().catch(() => {});
             }
           }
 
@@ -887,6 +901,22 @@ export const RoomProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
+    // If track is Web Audio (audio, local, licensed), handle via webAudioPlaybackProvider
+    if (track.provider === 'audio' || track.provider === 'local' || track.provider === 'licensed') {
+      if (playbackManager.getProvider().id !== 'audio') {
+        playbackManager.setProvider(webAudioPlaybackProvider);
+      }
+      try {
+        await webAudioPlaybackProvider.initialize();
+        await webAudioPlaybackProvider.loadTrack(track, currentRoom.playerState.position);
+        await webAudioPlaybackProvider.play();
+      } catch (err: unknown) {
+        console.warn('[playPause] Web Audio playback error (proceeding with room sync):', err);
+      }
+      socketService.send({ type: 'ADMIN_PLAY' });
+      return;
+    }
+
     // 2. Track is supported by configured PlaybackProvider
     const trackCheck = playbackManager.canPlayTrack(track);
     if (!trackCheck.canPlay) {
@@ -1076,6 +1106,12 @@ export const RoomProvider: React.FC<{ children: React.ReactNode }> = ({ children
       youtubePlaybackProvider.initialize().catch(() => {});
     } else if (item.track.provider === 'spotify' && playbackManager.getProvider().id !== 'spotify') {
       playbackManager.setProvider(spotifyPlaybackProvider);
+    } else if (
+      (item.track.provider === 'audio' || item.track.provider === 'local' || item.track.provider === 'licensed') &&
+      playbackManager.getProvider().id !== 'audio'
+    ) {
+      playbackManager.setProvider(webAudioPlaybackProvider);
+      webAudioPlaybackProvider.initialize().catch(() => {});
     }
     const playCheck = playbackManager.canPlayTrack(item.track);
     if (!playCheck.canPlay) {
