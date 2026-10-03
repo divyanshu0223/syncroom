@@ -261,8 +261,11 @@ export class SyncEngine {
         return;
       }
 
-      // If this track is loaded but paused, resume playback directly
-      if (provider.getCurrentTrackId?.() === trackId && provider.getStatus() === 'PAUSED') {
+      // If this track is loaded but paused or cued/ready, resume playback directly
+      if (
+        provider.getCurrentTrackId?.() === trackId &&
+        (provider.getStatus() === 'PAUSED' || provider.getStatus() === 'PLAYER_READY')
+      ) {
         try {
           await provider.play();
           this.start();
@@ -294,7 +297,10 @@ export class SyncEngine {
           this.scheduledPlayTimer = null;
           try {
             if (provider.getCurrentTrackId?.() !== trackId || provider.getStatus() !== 'PLAYING') {
-              await provider.loadTrack(trackId, state.position);
+              await provider.loadTrack(trackId, state.position, true);
+              if (state.isPlaying) {
+                await provider.play().catch(() => {});
+              }
             }
             this.start();
           } catch {
@@ -306,7 +312,10 @@ export class SyncEngine {
 
         try {
           if (provider.getCurrentTrackId?.() !== trackId || provider.getStatus() !== 'PLAYING') {
-            await provider.loadTrack(trackId, targetPosition);
+            await provider.loadTrack(trackId, targetPosition, true);
+            if (state.isPlaying) {
+              await provider.play().catch(() => {});
+            }
           }
           this.start();
           this.updateSyncStatus({
@@ -529,9 +538,7 @@ export class SyncEngine {
 
     const provider = playbackManager.getProvider();
     if (provider.id === 'spotify' || provider.id === 'youtube') {
-      if (provider.isConfigured) {
-        await provider.play().catch(() => {});
-      }
+      await provider.play().catch(() => {});
     } else {
       await this.audio.unlock();
     }

@@ -28,7 +28,7 @@ export interface PlaybackProvider {
   initialize(): Promise<boolean>;
   activateElement?(): Promise<void>;
   canPlayTrack(track: Track): { canPlay: boolean; reason: string };
-  loadTrack(track: Track | string, positionSeconds?: number): Promise<void>;
+  loadTrack(track: Track | string, positionSeconds?: number, autoplay?: boolean): Promise<void>;
   play(): Promise<void>;
   pause(): void;
   seek(positionSeconds: number): void;
@@ -86,7 +86,7 @@ export class UnconfiguredPlaybackProvider implements PlaybackProvider {
     };
   }
 
-  public async loadTrack(_track: Track | string, _positionSeconds?: number): Promise<void> {
+  public async loadTrack(_track: Track | string, _positionSeconds?: number, _autoplay?: boolean): Promise<void> {
     throw new Error('Audio playback provider is not configured.');
   }
 

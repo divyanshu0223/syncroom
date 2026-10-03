@@ -48,6 +48,7 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
   className = '',
 }) => {
   const isAdmin = role === 'admin';
+  const [showVideo, setShowVideo] = React.useState(false);
   const attachedIframeRef = React.useRef<HTMLIFrameElement | null>(null);
 
   const handleIframeRef = React.useCallback((el: HTMLIFrameElement | null) => {
@@ -66,7 +67,7 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
       if (playbackManager.getProvider().id !== 'youtube') {
         playbackManager.setProvider(youtubePlaybackProvider);
       }
-      youtubePlaybackProvider.loadTrack(track, playerState.position || 0);
+      youtubePlaybackProvider.loadTrack(track, playerState.position || 0, playerState.isPlaying);
     }
   }, [track?.provider, track?.id]);
   const {
@@ -303,18 +304,29 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => {
-                youtubePlaybackProvider.unMute();
-                youtubePlaybackProvider.setVolume(100);
-                setVolume(100);
-                youtubePlaybackProvider.play().catch(() => {});
-                enableAudio();
-
+              onClick={async () => {
+                try {
+                  youtubePlaybackProvider.unMute();
+                  youtubePlaybackProvider.setVolume(100);
+                  setVolume(100);
+                  await youtubePlaybackProvider.play();
+                  await enableAudio();
+                } catch (e) {
+                  console.warn('Unmute error:', e);
+                }
               }}
               className="px-2.5 py-1 rounded-md bg-red-500 hover:bg-red-600 text-white font-semibold text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer animate-pulse"
               title="Click to unmute and enable audio"
             >
               <span>🔊 Unmute Audio</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowVideo((prev) => !prev)}
+              className="px-2 py-1 rounded-md bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white font-medium text-[11px] transition-all flex items-center gap-1"
+              title={showVideo ? 'Switch to vinyl audio view' : 'Show YouTube video player'}
+            >
+              <span>{showVideo ? '🎵 Vinyl View' : '👁️ Video'}</span>
             </button>
             <span className="font-mono text-red-400/80 uppercase text-[10px] hidden sm:inline">
               {playerState.isPlaying ? 'Official Player Active' : 'Ready'}
@@ -454,43 +466,53 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
         )}
       </div>
 
-      {/* Background YouTube Audio Engine (Pure Audio - No Video) */}
+      {/* YouTube Audio/Video Engine */}
       {track.provider === 'youtube' && (track.youtubeVideoId || track.providerTrackId) && (
         <div
-          style={{
-            position: 'fixed',
-            bottom: '0px',
-            right: '0px',
-            width: '320px',
-            height: '180px',
-            opacity: 0.001,
-            pointerEvents: 'none',
-            zIndex: -100,
-            overflow: 'hidden',
-          }}
-          aria-hidden="true"
+          className={
+            showVideo
+              ? 'my-2 sm:my-4 w-full max-w-[480px] aspect-video rounded-2xl overflow-hidden shadow-2xl border border-neutral-800 z-10 mx-auto'
+              : 'overflow-hidden rounded-lg'
+          }
+          style={
+            showVideo
+              ? undefined
+              : {
+                  position: 'fixed',
+                  bottom: '12px',
+                  right: '12px',
+                  width: '240px',
+                  height: '135px',
+                  opacity: 0.02,
+                  pointerEvents: 'auto',
+                  zIndex: 1,
+                }
+          }
+          aria-hidden={!showVideo}
         >
           <iframe
             id="syncroom-youtube-iframe"
             key={track.youtubeVideoId || track.providerTrackId}
-            src={`https://www.youtube.com/embed/${track.youtubeVideoId || track.providerTrackId}?enablejsapi=1&autoplay=1&playsinline=1&controls=0&rel=0&modestbranding=1&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}`}
+            src={`https://www.youtube.com/embed/${track.youtubeVideoId || track.providerTrackId}?enablejsapi=1&autoplay=1&playsinline=1&controls=1&rel=0&modestbranding=1${typeof window !== 'undefined' && window.location.origin ? `&origin=${window.location.origin}` : ''}`}
             title={track.title}
-            style={{ width: '320px', height: '180px', border: 0 }}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope"
+            style={{ width: '100%', height: '100%', border: 0 }}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             ref={handleIframeRef}
           />
         </div>
       )}
 
       {/* Large Music Artwork (Vinyl record + Album art - Pure Music Experience) */}
-      <div className="my-2 sm:my-4 w-full flex justify-center z-10">
-        <ArtworkDisplay
-          track={track}
-          isPlaying={playerState.isPlaying}
-          size="lg"
-          showVinylPeek={true}
-        />
-      </div>
+      {!showVideo && (
+        <div className="my-2 sm:my-4 w-full flex justify-center z-10">
+          <ArtworkDisplay
+            track={track}
+            isPlaying={playerState.isPlaying}
+            size="lg"
+            showVinylPeek={true}
+          />
+        </div>
+      )}
 
       {/* Song title & Artist info */}
       <div className="w-full text-center my-2 sm:my-4 z-10 px-2">

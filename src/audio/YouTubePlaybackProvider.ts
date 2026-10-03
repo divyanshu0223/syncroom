@@ -213,6 +213,17 @@ export class YouTubePlaybackProvider implements PlaybackProvider {
         return;
       }
 
+      if ((window as any).__ytIframeApiReady) {
+        finishInit();
+        return;
+      }
+
+      if ((window as any).__ytIframeApiReadyCallbacks) {
+        (window as any).__ytIframeApiReadyCallbacks.push(() => {
+          finishInit();
+        });
+      }
+
       // 2. Poll periodically in case onYouTubeIframeAPIReady already fired
       pollInterval = setInterval(() => {
         if (window.YT && window.YT.Player) {
@@ -278,15 +289,20 @@ export class YouTubePlaybackProvider implements PlaybackProvider {
               if (typeof event.target.unMute === 'function') {
                 event.target.unMute();
               }
-              event.target.setVolume(this.volume || 100);
+              if (typeof event.target.setVolume === 'function') {
+                event.target.setVolume(this.volume || 100);
+              }
             } catch {}
-            if (this.status !== 'PLAYER_READY' && this.status !== 'PLAYING') {
-              this.notify('PLAYER_READY');
-            }
             if (this.pendingVideoLoad) {
               const pending = this.pendingVideoLoad;
               this.pendingVideoLoad = null;
               this.loadTrackInternal(pending.videoId, pending.positionSeconds, pending.autoplay);
+            } else if (this.status === 'PLAYING') {
+              try {
+                event.target.playVideo();
+              } catch {}
+            } else if (this.status !== 'PLAYER_READY') {
+              this.notify('PLAYER_READY');
             }
           },
           onStateChange: (event) => {
@@ -426,7 +442,7 @@ export class YouTubePlaybackProvider implements PlaybackProvider {
   /**
    * Loads a track by track object or video ID.
    */
-  public async loadTrack(track: Track | string, positionSeconds = 0): Promise<void> {
+  public async loadTrack(track: Track | string, positionSeconds = 0, autoplay = true): Promise<void> {
     let videoId: string;
     let trackId: string;
 
@@ -444,14 +460,19 @@ export class YouTubePlaybackProvider implements PlaybackProvider {
     this.currentTrackId = trackId;
     this.currentVideoId = videoId;
     this.isPlayerReady = true;
-    this.notify('PLAYER_READY');
+
+    if (autoplay) {
+      this.notify('PLAYING');
+    } else {
+      this.notify('PLAYER_READY');
+    }
 
     if (this.player) {
-      await this.loadTrackInternal(videoId, positionSeconds, false);
+      await this.loadTrackInternal(videoId, positionSeconds, autoplay);
       return;
     }
 
-    this.pendingVideoLoad = { videoId, positionSeconds, autoplay: false };
+    this.pendingVideoLoad = { videoId, positionSeconds, autoplay };
     await this.initialize();
   }
 
@@ -460,13 +481,23 @@ export class YouTubePlaybackProvider implements PlaybackProvider {
     if (this.player) {
       try {
         if (autoplay) {
+          try {
+            if (typeof this.player.unMute === 'function') {
+              this.player.unMute();
+            }
+            if (typeof this.player.setVolume === 'function') {
+              this.player.setVolume(this.volume || 100);
+            }
+          } catch {}
           if (typeof this.player.loadVideoById === 'function') {
             this.player.loadVideoById(videoId, startSec);
           }
+          this.notify('PLAYING');
         } else {
           if (typeof this.player.cueVideoById === 'function') {
             this.player.cueVideoById(videoId, startSec);
           }
+          this.notify('PLAYER_READY');
         }
       } catch (err) {
         console.warn('[YouTubePlaybackProvider] Error loading video:', err);
@@ -477,21 +508,44 @@ export class YouTubePlaybackProvider implements PlaybackProvider {
     const iframe = this.getIframeElement();
     if (iframe && iframe.contentWindow) {
       try {
+        if (autoplay) {
+          iframe.contentWindow.postMessage(
+            JSON.stringify({ event: 'command', func: 'unMute', args: [] }),
+            '*'
+          );
+          iframe.contentWindow.postMessage(
+            JSON.stringify({ event: 'command', func: 'setVolume', args: [this.volume || 100] }),
+            '*'
+          );
+        }
         iframe.contentWindow.postMessage(
-          JSON.stringify({ event: 'command', func: autoplay ? 'loadVideoById' : 'cueVideoById', args: [videoId, startSec] }),
+          JSON.stringify({
+            event: 'command',
+            func: autoplay ? 'loadVideoById' : 'cueVideoById',
+            args: [videoId, startSec],
+          }),
           '*'
         );
+        if (autoplay) {
+          iframe.contentWindow.postMessage(
+            JSON.stringify({ event: 'command', func: 'playVideo', args: [] }),
+            '*'
+          );
+          this.notify('PLAYING');
+        }
       } catch {}
     }
   }
 
   public unMute(): void {
-    if (this.player && this.isPlayerReady) {
+    if (this.player) {
       try {
         if (typeof this.player.unMute === 'function') {
           this.player.unMute();
         }
-        this.player.setVolume(this.volume || 100);
+        if (typeof this.player.setVolume === 'function') {
+          this.player.setVolume(this.volume || 100);
+        }
       } catch {}
     }
 
@@ -511,7 +565,7 @@ export class YouTubePlaybackProvider implements PlaybackProvider {
   }
 
   public mute(): void {
-    if (this.player && this.isPlayerReady) {
+    if (this.player) {
       try {
         if (typeof this.player.mute === 'function') {
           this.player.mute();
@@ -547,17 +601,21 @@ export class YouTubePlaybackProvider implements PlaybackProvider {
   public async play(): Promise<void> {
     this.unMute();
 
-    if (this.player && this.isPlayerReady) {
+    if (this.player) {
       try {
         try {
           if (typeof this.player.unMute === 'function') {
             this.player.unMute();
           }
-          this.player.setVolume(this.volume || 100);
+          if (typeof this.player.setVolume === 'function') {
+            this.player.setVolume(this.volume || 100);
+          }
         } catch {}
-        this.player.playVideo();
-        this.notify('PLAYING');
-        return;
+        if (typeof this.player.playVideo === 'function') {
+          this.player.playVideo();
+          this.notify('PLAYING');
+          return;
+        }
       } catch (err) {
         console.warn('[YouTubePlaybackProvider] playVideo error:', err);
       }

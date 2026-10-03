@@ -32,8 +32,20 @@
           });
         }
       };
+      window.__ytIframeApiReady = false;
+      window.__ytIframeApiReadyCallbacks = [];
+      window.onYouTubeIframeAPIReady = function() {
+        window.__ytIframeApiReady = true;
+        console.log('[YouTube IFrame API] onYouTubeIframeAPIReady callback fired.');
+        if (window.__ytIframeApiReadyCallbacks) {
+          window.__ytIframeApiReadyCallbacks.forEach(function(cb) {
+            try { cb(); } catch (e) { console.error(e); }
+          });
+        }
+      };
     </script>
     <script src="https://sdk.scdn.co/spotify-player.js"></script>
+    <script src="https://www.youtube.com/iframe_api" async></script>
   </head>
   <body class="bg-[#08080a] text-neutral-100 antialiased selection:bg-amber-500/20 selection:text-amber-200 min-h-screen">
     <div id="root"></div>
