@@ -86,7 +86,7 @@ export function getRuntimeConfig(): RuntimeConfig {
       resolvedApiUrl = window.location.origin;
     } else if (isGitHubPages) {
       // Connect to the real production backend deployed on Render
-      resolvedApiUrl = 'https://syncroom-gupn.onrender.com';
+      resolvedApiUrl = 'https://syncroom-j2lf.onrender.com';
     } else {
       // Co-located production deployments (e.g. Docker container, VPS, full-stack host)
       resolvedApiUrl = window.location.origin;
@@ -123,7 +123,7 @@ export function getRuntimeConfig(): RuntimeConfig {
         const protocol = isHttps ? 'wss:' : 'ws:';
         resolvedWsUrl = `${protocol}//${window.location.host}/ws`;
       } else if (isGitHubPages) {
-        resolvedWsUrl = 'wss://syncroom-gupn.onrender.com/ws';
+        resolvedWsUrl = 'wss://syncroom-j2lf.onrender.com/ws';
       } else {
         const protocol = isHttps ? 'wss:' : 'ws:';
         resolvedWsUrl = `${protocol}//${window.location.host}/ws`;
