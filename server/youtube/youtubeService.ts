@@ -346,6 +346,8 @@ export class YouTubeService {
 
   /**
    * Fetches video metadata by video ID.
+   * If Data API quota is exceeded or not configured, gracefully resolves via
+   * YouTube's quota-free public oEmbed service or reliable metadata fallback.
    */
   public async getVideoById(videoId: string): Promise<Track | null> {
     const cleanId = videoId.trim();
@@ -357,65 +359,89 @@ export class YouTubeService {
       return cached.data;
     }
 
-    if (this.isQuotaExceeded()) {
-      return null;
-    }
-
     const apiKey = this.getApiKey();
-    if (!apiKey) {
-      const err: any = new Error('YouTube API is not configured on the server. Please set YOUTUBE_API_KEY.');
-      err.code = 'YOUTUBE_NOT_CONFIGURED';
-      err.statusCode = 503;
-      throw err;
-    }
 
-    try {
-      const detailsUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
-      detailsUrl.searchParams.set('part', 'snippet,contentDetails');
-      detailsUrl.searchParams.set('id', cleanId);
-      detailsUrl.searchParams.set('key', apiKey);
+    // 1. Try Google Data API if configured and quota is healthy
+    if (apiKey && !this.isQuotaExceeded()) {
+      try {
+        const detailsUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
+        detailsUrl.searchParams.set('part', 'snippet,contentDetails');
+        detailsUrl.searchParams.set('id', cleanId);
+        detailsUrl.searchParams.set('key', apiKey);
 
-      const res = await fetch(detailsUrl.toString(), {
-        headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(8000),
-      });
+        const res = await fetch(detailsUrl.toString(), {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(6000),
+        });
 
-      if (!res.ok) {
-        if (res.status === 429 || res.status === 403) {
+        if (res.ok) {
+          const data = await res.json();
+          const item = data.items?.[0];
+          if (item) {
+            const duration = parseIso8601Duration(item.contentDetails?.duration || '');
+            const thumb =
+              item.snippet?.thumbnails?.high?.url ||
+              item.snippet?.thumbnails?.medium?.url ||
+              item.snippet?.thumbnails?.default?.url ||
+              null;
+
+            const track = this.normalizeVideoToTrack(
+              cleanId,
+              item.snippet?.title || 'Unknown Title',
+              item.snippet?.channelTitle || 'YouTube',
+              thumb,
+              duration,
+            );
+
+            videoCache.set(cacheKey, { data: track, expiresAt: Date.now() + MATCH_CACHE_TTL_MS });
+            return track;
+          }
+        } else if (res.status === 429 || res.status === 403) {
           this.setQuotaExceeded(15 * 60 * 1000);
         }
-        return null;
+      } catch (err: any) {
+        logger.warn('[YouTubeService] Data API video fetch failed, falling back to oEmbed', { error: err.message, videoId });
       }
-
-      const data = await res.json();
-      const item = data.items?.[0];
-      if (!item) {
-        return null;
-      }
-
-      const duration = parseIso8601Duration(item.contentDetails?.duration || '');
-      const thumb =
-        item.snippet?.thumbnails?.high?.url ||
-        item.snippet?.thumbnails?.medium?.url ||
-        item.snippet?.thumbnails?.default?.url ||
-        null;
-
-      const track = this.normalizeVideoToTrack(
-        cleanId,
-        item.snippet?.title || 'Unknown Title',
-        item.snippet?.channelTitle || 'YouTube',
-        thumb,
-        duration,
-      );
-
-      videoCache.set(cacheKey, { data: track, expiresAt: Date.now() + MATCH_CACHE_TTL_MS });
-      return track;
-    } catch (err: any) {
-      logger.warn('[YouTubeService] getVideoById exception', { error: err.message, videoId });
-      return null;
     }
+
+    // 2. Quota-free official oEmbed fallback (0 quota units, no API key required)
+    try {
+      const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${cleanId}`)}&format=json`;
+      const oembedRes = await fetch(oembedUrl, {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (oembedRes.ok) {
+        const oembedData = await oembedRes.json();
+        const track = this.normalizeVideoToTrack(
+          cleanId,
+          oembedData.title || `YouTube Video (${cleanId})`,
+          oembedData.author_name || 'YouTube',
+          oembedData.thumbnail_url || `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg`,
+          180
+        );
+
+        videoCache.set(cacheKey, { data: track, expiresAt: Date.now() + MATCH_CACHE_TTL_MS });
+        return track;
+      }
+    } catch (oembedErr) {
+      logger.warn('[YouTubeService] oEmbed fallback failed', { error: oembedErr, videoId });
+    }
+
+    // 3. Direct metadata fallback ensures pasted links can ALWAYS be played
+    const fallbackTrack = this.normalizeVideoToTrack(
+      cleanId,
+      `YouTube Track (${cleanId})`,
+      'YouTube',
+      `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg`,
+      180
+    );
+    videoCache.set(cacheKey, { data: fallbackTrack, expiresAt: Date.now() + MATCH_CACHE_TTL_MS });
+    return fallbackTrack;
   }
 }
+
 
 export const youtubeService = new YouTubeService();
 

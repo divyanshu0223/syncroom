@@ -132,6 +132,22 @@ test('YOUTUBE PLAYBACK 5: parseYouTubeVideoId correctly identifies diverse YouTu
   const res5 = parseYouTubeVideoId('dQw4w9WgXcQ');
   assert.equal(res5.videoId, 'dQw4w9WgXcQ');
 
+  // URL with tracking param (?si=)
+  const resTracking = parseYouTubeVideoId('https://youtu.be/xUlnx2vBtcs?si=aaEtYJVzy2vRy3cD');
+  assert.equal(resTracking.videoId, 'xUlnx2vBtcs');
+
+  // Truncated protocol prefix (e.g. s://youtu.be/...)
+  const resTrunc = parseYouTubeVideoId('s://youtu.be/xUlnx2vBtcs?si=aaEtYJVzy2vRy3cD');
+  assert.equal(resTrunc.videoId, 'xUlnx2vBtcs');
+
+  // Doubled URL paste
+  const resDouble = parseYouTubeVideoId('https://youtu.be/xUlnx2vBtcs?si=aaEtYJVzy2vRy3cDhttps://youtu.be/xUlnx2vBtcs?si=aaEtYJVzy2vRy3cD');
+  assert.equal(resDouble.videoId, 'xUlnx2vBtcs');
+
+  // YouTube shorts URL
+  const resShorts = parseYouTubeVideoId('https://www.youtube.com/shorts/xUlnx2vBtcs');
+  assert.equal(resShorts.videoId, 'xUlnx2vBtcs');
+
   // Invalid strings
   const res6 = parseYouTubeVideoId('not-a-youtube-url');
   assert.equal(res6.videoId, null);
@@ -140,3 +156,4 @@ test('YOUTUBE PLAYBACK 5: parseYouTubeVideoId correctly identifies diverse YouTu
   const res7 = parseYouTubeVideoId('');
   assert.equal(res7.videoId, null);
 });
+

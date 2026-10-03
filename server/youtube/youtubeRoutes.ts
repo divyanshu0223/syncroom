@@ -116,14 +116,6 @@ youtubeRouter.get('/video/:videoId', youtubeRateLimiter, async (req: Request, re
     return res.status(400).json({ error: 'Video ID is required.' });
   }
 
-  if (!youtubeService.isConfigured()) {
-    return res.status(200).json({
-      track: null,
-      configured: false,
-      error: 'YouTube API is not configured on the server. Please set YOUTUBE_API_KEY in .env.',
-    });
-  }
-
   try {
     const track = await youtubeService.getVideoById(videoId);
     if (!track) {
@@ -134,4 +126,5 @@ youtubeRouter.get('/video/:videoId', youtubeRateLimiter, async (req: Request, re
     return res.status(500).json({ error: err.message || 'Failed to retrieve YouTube video.' });
   }
 });
+
 

@@ -79,27 +79,43 @@ export function parseYouTubeVideoId(input: string): { videoId: string | null; er
 
   const trimmed = input.trim();
 
-  // youtu.be/VIDEO_ID
-  const shortMatch = trimmed.match(/(?:https?:\/\/)?(?:www\.)?youtu\.be\/([a-zA-Z0-9_-]{11})/i);
+  // youtu.be/VIDEO_ID (supports any protocol prefix or truncated prefix like s:// or no protocol)
+  const shortMatch = trimmed.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/i);
   if (shortMatch) {
     return { videoId: shortMatch[1] };
   }
 
-  // youtube.com/watch?v=VIDEO_ID (supports extra query parameters)
-  const watchMatch = trimmed.match(/(?:https?:\/\/)?(?:www\.|m\.)?youtube\.com\/watch\?(?:.*&)?v=([a-zA-Z0-9_-]{11})/i);
+  // youtube.com/watch?v=VIDEO_ID or &v=VIDEO_ID
+  const watchMatch = trimmed.match(/youtube\.com\/watch\?(?:.*&)?v=([a-zA-Z0-9_-]{11})/i);
   if (watchMatch) {
     return { videoId: watchMatch[1] };
   }
 
+  // youtube.com/shorts/VIDEO_ID
+  const shortsMatch = trimmed.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/i);
+  if (shortsMatch) {
+    return { videoId: shortsMatch[1] };
+  }
+
   // youtube.com/embed/VIDEO_ID or /v/VIDEO_ID
-  const embedMatch = trimmed.match(/(?:https?:\/\/)?(?:www\.|m\.)?youtube\.com\/(?:embed|v)\/([a-zA-Z0-9_-]{11})/i);
+  const embedMatch = trimmed.match(/youtube\.com\/(?:embed|v)\/([a-zA-Z0-9_-]{11})/i);
   if (embedMatch) {
     return { videoId: embedMatch[1] };
   }
 
+  // Any general v=ID pattern in query strings
+  const vParamMatch = trimmed.match(/[?&]v=([a-zA-Z0-9_-]{11})/i);
+  if (vParamMatch) {
+    return { videoId: vParamMatch[1] };
+  }
+
   // 11-char video ID directly
+  const directMatch = trimmed.match(/\b([a-zA-Z0-9_-]{11})\b/);
   if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
     return { videoId: trimmed };
+  }
+  if (directMatch && !trimmed.includes(' ') && trimmed.length <= 15) {
+    return { videoId: directMatch[1] };
   }
 
   return { videoId: null, error: 'Invalid YouTube video URL or ID format.' };
