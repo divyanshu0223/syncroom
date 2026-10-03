@@ -80,6 +80,16 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
     providerError,
   } = useSynchronizedPlayback();
 
+  const handlePlayPause = () => {
+    if (track?.provider === 'youtube') {
+      youtubePlaybackProvider.unMute();
+      youtubePlaybackProvider.setVolume(100);
+      setVolume(100);
+      enableAudio();
+    }
+    onPlayPause();
+  };
+
   const handleConnectSpotify = async () => {
     try {
       const auth = await spotifyMusicProvider.getAuthUrl();
@@ -297,8 +307,10 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
                 youtubePlaybackProvider.unMute();
                 youtubePlaybackProvider.setVolume(100);
                 setVolume(100);
+                youtubePlaybackProvider.resume();
+                enableAudio();
               }}
-              className="px-2 py-0.5 rounded bg-red-500/25 hover:bg-red-500/40 text-red-200 border border-red-500/40 text-[10px] font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+              className="px-2.5 py-1 rounded-md bg-red-500 hover:bg-red-600 text-white font-semibold text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer animate-pulse"
               title="Click to unmute and enable audio"
             >
               <span>🔊 Unmute Audio</span>
@@ -443,13 +455,26 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
 
       {/* Background YouTube Audio Engine (Pure Audio - No Video) */}
       {track.provider === 'youtube' && (track.youtubeVideoId || track.providerTrackId) && (
-        <div className="absolute -top-[9999px] -left-[9999px] w-1 h-1 pointer-events-none opacity-0 overflow-hidden" aria-hidden="true">
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '0px',
+            right: '0px',
+            width: '320px',
+            height: '180px',
+            opacity: 0.001,
+            pointerEvents: 'none',
+            zIndex: -100,
+            overflow: 'hidden',
+          }}
+          aria-hidden="true"
+        >
           <iframe
             id="syncroom-youtube-iframe"
             key={track.youtubeVideoId || track.providerTrackId}
-            src={`https://www.youtube.com/embed/${track.youtubeVideoId || track.providerTrackId}?enablejsapi=1&autoplay=${playerState.isPlaying ? 1 : 0}&playsinline=1&controls=0&rel=0&modestbranding=1&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}`}
+            src={`https://www.youtube.com/embed/${track.youtubeVideoId || track.providerTrackId}?enablejsapi=1&autoplay=1&playsinline=1&controls=0&rel=0&modestbranding=1&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}`}
             title={track.title}
-            className="w-1 h-1 border-0"
+            style={{ width: '320px', height: '180px', border: 0 }}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope"
             ref={handleIframeRef}
           />
@@ -494,7 +519,7 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
             <AdminControls
               isPlaying={playerState.isPlaying}
               isConnecting={track.provider === 'spotify' && (providerStatus === 'CONNECTING_PLAYER' || providerStatus === 'INITIALIZING')}
-              onPlayPause={onPlayPause}
+              onPlayPause={handlePlayPause}
               onNext={onNext}
               onPrevious={onPrevious}
               isShuffle={isShuffle}
