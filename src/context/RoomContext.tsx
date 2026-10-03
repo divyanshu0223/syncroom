@@ -1099,6 +1099,9 @@ export const RoomProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           matchedTrack = await youtubeMusicProvider.findMatch(currentTrack.title, currentTrack.artist);
           ytVideoId = matchedTrack?.youtubeVideoId || matchedTrack?.providerTrackId;
+          if (ytVideoId) {
+            currentTrack.youtubeVideoId = ytVideoId;
+          }
         } catch (err) {
           console.warn('[switchCurrentTrackProvider] YouTube match failed:', err);
         }
@@ -1108,7 +1111,9 @@ export const RoomProvider: React.FC<{ children: React.ReactNode }> = ({ children
         showToast({
           type: 'error',
           title: 'YouTube Unavailable',
-          description: `No corresponding YouTube video found for "${currentTrack.title}".`,
+          description: youtubeMusicProvider.isQuotaExceeded()
+            ? 'YouTube search quota limit reached for today. You can paste a direct YouTube video link in the queue.'
+            : `No corresponding YouTube video found for "${currentTrack.title}".`,
         });
         return;
       }
@@ -1189,16 +1194,39 @@ export const RoomProvider: React.FC<{ children: React.ReactNode }> = ({ children
       spotifyPlaybackProvider.pause();
       let ytTrack = track;
       if (track.provider !== 'youtube') {
-        const match = await youtubeMusicProvider.findMatch(track.title, track.artist);
-        if (!match) {
-          showToast({
-            type: 'error',
-            title: 'YouTube Video Unavailable',
-            description: `No corresponding YouTube video found for "${track.title}".`,
-          });
-          return;
+        if (track.youtubeVideoId) {
+          // Reuse existing cached video ID without triggering any network search
+          ytTrack = {
+            ...track,
+            id: `youtube-${track.youtubeVideoId}`,
+            provider: 'youtube',
+            providerTrackId: track.youtubeVideoId,
+            audioSource: 'youtube',
+            youtubeVideoId: track.youtubeVideoId,
+          };
+        } else {
+          let match: Track | null = null;
+          try {
+            match = await youtubeMusicProvider.findMatch(track.title, track.artist);
+          } catch (err) {
+            console.warn('[playTrackWithProvider] YouTube match failed:', err);
+          }
+
+          if (!match) {
+            showToast({
+              type: 'error',
+              title: 'YouTube Unavailable',
+              description: youtubeMusicProvider.isQuotaExceeded()
+                ? 'YouTube search quota limit reached for today. You can paste a direct YouTube video link.'
+                : `No corresponding YouTube video found for "${track.title}".`,
+            });
+            return;
+          }
+
+          // Cache on original track
+          track.youtubeVideoId = match.youtubeVideoId || match.providerTrackId;
+          ytTrack = match;
         }
-        ytTrack = match;
       }
 
       playbackManager.setProvider(youtubePlaybackProvider);
@@ -1211,6 +1239,7 @@ export const RoomProvider: React.FC<{ children: React.ReactNode }> = ({ children
         autoplay: true,
       });
     } else {
+
       youtubePlaybackProvider.pause();
       playbackManager.setProvider(spotifyPlaybackProvider);
 

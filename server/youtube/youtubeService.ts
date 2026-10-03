@@ -71,6 +71,8 @@ export function parseIso8601Duration(isoDuration: string): number {
 export const parseIsoDuration = parseIso8601Duration;
 
 export class YouTubeService {
+  private quotaExceededUntil = 0;
+
   private getApiKey(): string | null {
     const key = process.env.YOUTUBE_API_KEY?.trim();
     return key || null;
@@ -78,6 +80,23 @@ export class YouTubeService {
 
   public isConfigured(): boolean {
     return Boolean(this.getApiKey());
+  }
+
+  public isQuotaExceeded(): boolean {
+    return Date.now() < this.quotaExceededUntil;
+  }
+
+  public getQuotaCooldownSeconds(): number {
+    return Math.max(0, Math.ceil((this.quotaExceededUntil - Date.now()) / 1000));
+  }
+
+  public setQuotaExceeded(cooldownMs = 15 * 60 * 1000): void {
+    this.quotaExceededUntil = Date.now() + cooldownMs;
+    logger.warn('[YouTubeService] Circuit breaker tripped: Quota/RateLimit exceeded. Cooling down for ms:', { cooldownMs });
+  }
+
+  public resetCircuitBreaker(): void {
+    this.quotaExceededUntil = 0;
   }
 
   /**
@@ -119,9 +138,26 @@ export class YouTubeService {
   /**
    * Searches YouTube Data API v3 for video results matching the query.
    */
-  public async searchTracks(query: string, maxResults = 10): Promise<Track[]> {
+  public async searchTracks(query: string, maxResults = 5): Promise<Track[]> {
     const trimmed = query.trim();
     if (!trimmed) return [];
+
+    const normalized = trimmed.toLowerCase().replace(/\s+/g, ' ');
+    const cappedMax = Math.min(Math.max(1, maxResults), 10);
+    const cacheKey = `search:${normalized}:${cappedMax}`;
+    const cached = searchCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+
+    // Circuit breaker check: avoid hammering Google if quota is known to be exhausted
+    if (this.isQuotaExceeded()) {
+      const err: any = new Error('YouTube search quota limit reached. Please paste a direct YouTube video link to play songs.');
+      err.code = 'YOUTUBE_QUOTA_EXCEEDED';
+      err.statusCode = 429;
+      err.retryAfterSeconds = this.getQuotaCooldownSeconds();
+      throw err;
+    }
 
     const apiKey = this.getApiKey();
     if (!apiKey) {
@@ -131,18 +167,15 @@ export class YouTubeService {
       throw err;
     }
 
-    const cacheKey = `search:${trimmed.toLowerCase()}:${maxResults}`;
-    const cached = searchCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.data;
-    }
 
     try {
-      // 1. Search videos
+      // 1. Search videos with embeddable and syndicated flags
       const searchUrl = new URL('https://www.googleapis.com/youtube/v3/search');
       searchUrl.searchParams.set('part', 'snippet');
       searchUrl.searchParams.set('type', 'video');
-      searchUrl.searchParams.set('maxResults', String(Math.min(maxResults, 20)));
+      searchUrl.searchParams.set('maxResults', String(cappedMax));
+      searchUrl.searchParams.set('videoEmbeddable', 'true');
+      searchUrl.searchParams.set('videoSyndicated', 'true');
       searchUrl.searchParams.set('q', trimmed);
       searchUrl.searchParams.set('key', apiKey);
 
@@ -157,10 +190,21 @@ export class YouTubeService {
         try { parsed = JSON.parse(errorBody); } catch {}
         const errorReason = parsed?.error?.errors?.[0]?.reason || parsed?.error?.message || errorBody;
 
-        if (searchRes.status === 403 && (errorReason.includes('quota') || errorReason.includes('Quota'))) {
-          const quotaErr: any = new Error('YouTube API quota exceeded. Please try again later.');
+        const isQuotaOrRateLimit =
+          searchRes.status === 429 ||
+          searchRes.status === 403 && (
+            String(errorReason).toLowerCase().includes('quota') ||
+            String(errorReason).toLowerCase().includes('ratelimit') ||
+            String(errorReason).toLowerCase().includes('dailylimit') ||
+            String(errorReason).toLowerCase().includes('userlimit')
+          );
+
+        if (isQuotaOrRateLimit) {
+          this.setQuotaExceeded(15 * 60 * 1000);
+          const quotaErr: any = new Error('YouTube API quota or rate limit exceeded. Please paste a direct YouTube video link instead.');
           quotaErr.code = 'YOUTUBE_QUOTA_EXCEEDED';
           quotaErr.statusCode = 429;
+          quotaErr.retryAfterSeconds = this.getQuotaCooldownSeconds();
           throw quotaErr;
         }
 
@@ -180,34 +224,38 @@ export class YouTubeService {
       }
 
       // 2. Fetch video details to retrieve accurate durations
-      const detailsUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
-      detailsUrl.searchParams.set('part', 'snippet,contentDetails');
-      detailsUrl.searchParams.set('id', videoIds.join(','));
-      detailsUrl.searchParams.set('key', apiKey);
-
-      const detailsRes = await fetch(detailsUrl.toString(), {
-        headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(8000),
-      });
-
       const detailsMap = new Map<string, { durationSeconds: number; title: string; channelTitle: string; thumbnailUrl: string | null }>();
 
-      if (detailsRes.ok) {
-        const detailsData = await detailsRes.json();
-        for (const v of detailsData.items || []) {
-          const duration = parseIso8601Duration(v.contentDetails?.duration || '');
-          const thumb =
-            v.snippet?.thumbnails?.high?.url ||
-            v.snippet?.thumbnails?.medium?.url ||
-            v.snippet?.thumbnails?.default?.url ||
-            null;
-          detailsMap.set(v.id, {
-            durationSeconds: duration,
-            title: v.snippet?.title || '',
-            channelTitle: v.snippet?.channelTitle || '',
-            thumbnailUrl: thumb,
-          });
+      try {
+        const detailsUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
+        detailsUrl.searchParams.set('part', 'snippet,contentDetails');
+        detailsUrl.searchParams.set('id', videoIds.join(','));
+        detailsUrl.searchParams.set('key', apiKey);
+
+        const detailsRes = await fetch(detailsUrl.toString(), {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(8000),
+        });
+
+        if (detailsRes.ok) {
+          const detailsData = await detailsRes.json();
+          for (const v of detailsData.items || []) {
+            const duration = parseIso8601Duration(v.contentDetails?.duration || '');
+            const thumb =
+              v.snippet?.thumbnails?.high?.url ||
+              v.snippet?.thumbnails?.medium?.url ||
+              v.snippet?.thumbnails?.default?.url ||
+              null;
+            detailsMap.set(v.id, {
+              durationSeconds: duration,
+              title: v.snippet?.title || '',
+              channelTitle: v.snippet?.channelTitle || '',
+              thumbnailUrl: thumb,
+            });
+          }
         }
+      } catch (detailsErr) {
+        logger.warn('[YouTubeService] Video details fetch failed, falling back to snippet', { error: detailsErr });
       }
 
       // 3. Transform to Track[]
@@ -231,6 +279,22 @@ export class YouTubeService {
         .filter((t): t is Track => t !== null);
 
       searchCache.set(cacheKey, { data: tracks, expiresAt: Date.now() + SEARCH_CACHE_TTL_MS });
+
+      // Cross-populate video and match caches to save quota on subsequent clicks
+      for (const track of tracks) {
+        if (track.youtubeVideoId) {
+          videoCache.set(`video:${track.youtubeVideoId}`, {
+            data: track,
+            expiresAt: Date.now() + MATCH_CACHE_TTL_MS,
+          });
+          const matchKey = `match:${track.title.toLowerCase().replace(/\s+/g, ' ')}::${track.artist.toLowerCase().replace(/\s+/g, ' ')}`;
+          matchCache.set(matchKey, {
+            data: track,
+            expiresAt: Date.now() + MATCH_CACHE_TTL_MS,
+          });
+        }
+      }
+
       return tracks;
     } catch (err: any) {
       logger.warn('[YouTubeService] searchTracks exception', { error: err.message, code: err.code });
@@ -246,24 +310,38 @@ export class YouTubeService {
     const cleanTitle = title.trim();
     if (!cleanTitle) return null;
 
-    const cacheKey = `match:${cleanTitle.toLowerCase()}::${(artist || '').toLowerCase()}`;
+    const normTitle = cleanTitle.toLowerCase().replace(/\s+/g, ' ');
+    const normArtist = (artist || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const cacheKey = `match:${normTitle}::${normArtist}`;
+
     const cached = matchCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.data;
     }
 
-    const searchQuery = artist ? `${cleanTitle} ${artist}` : cleanTitle;
-    const tracks = await this.searchTracks(searchQuery, 5);
-
-    if (tracks.length === 0) {
-      matchCache.set(cacheKey, { data: null, expiresAt: Date.now() + MATCH_CACHE_TTL_MS });
+    if (this.isQuotaExceeded()) {
       return null;
     }
 
-    // Pick best match: prefer result with title/artist match, or first result
-    const best = tracks[0];
-    matchCache.set(cacheKey, { data: best, expiresAt: Date.now() + MATCH_CACHE_TTL_MS });
-    return best;
+    const searchQuery = artist ? `${cleanTitle} ${artist}` : cleanTitle;
+    try {
+      const tracks = await this.searchTracks(searchQuery, 5);
+
+      if (tracks.length === 0) {
+        matchCache.set(cacheKey, { data: null, expiresAt: Date.now() + MATCH_CACHE_TTL_MS });
+        return null;
+      }
+
+      // Pick best match: prefer result with title/artist match, or first result
+      const best = tracks[0];
+      matchCache.set(cacheKey, { data: best, expiresAt: Date.now() + MATCH_CACHE_TTL_MS });
+      return best;
+    } catch (err: any) {
+      if (err.code === 'YOUTUBE_QUOTA_EXCEEDED') {
+        return null;
+      }
+      throw err;
+    }
   }
 
   /**
@@ -277,6 +355,10 @@ export class YouTubeService {
     const cached = videoCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.data;
+    }
+
+    if (this.isQuotaExceeded()) {
+      return null;
     }
 
     const apiKey = this.getApiKey();
@@ -299,6 +381,9 @@ export class YouTubeService {
       });
 
       if (!res.ok) {
+        if (res.status === 429 || res.status === 403) {
+          this.setQuotaExceeded(15 * 60 * 1000);
+        }
         return null;
       }
 
@@ -333,3 +418,4 @@ export class YouTubeService {
 }
 
 export const youtubeService = new YouTubeService();
+

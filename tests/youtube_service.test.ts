@@ -52,3 +52,58 @@ test('YOUTUBE SERVICE 4: Search and Match gracefully handle missing or empty que
   const emptyMatch = await youtubeService.findMatch('', '');
   assert.equal(emptyMatch, null);
 });
+
+test('YOUTUBE SERVICE 5: Circuit breaker trips on quota limits and blocks redundant calls', async () => {
+  youtubeService.resetCircuitBreaker();
+  assert.equal(youtubeService.isQuotaExceeded(), false);
+  assert.equal(youtubeService.getQuotaCooldownSeconds(), 0);
+
+  // Manually trip circuit breaker (simulating a 429 RateLimitExceeded response)
+  youtubeService.setQuotaExceeded(300 * 1000);
+  assert.equal(youtubeService.isQuotaExceeded(), true);
+  assert.ok(youtubeService.getQuotaCooldownSeconds() > 250);
+
+  // searchTracks must immediately reject with 429 YOUTUBE_QUOTA_EXCEEDED without calling API
+  await assert.rejects(
+    async () => {
+      await youtubeService.searchTracks('test song');
+    },
+    (err: any) => {
+      assert.equal(err.code, 'YOUTUBE_QUOTA_EXCEEDED');
+      assert.equal(err.statusCode, 429);
+      assert.ok(err.retryAfterSeconds > 0);
+      return true;
+    }
+  );
+
+  // findMatch must safely return null without throwing or loop-retrying
+  const matchResult = await youtubeService.findMatch('test song', 'test artist');
+  assert.equal(matchResult, null);
+
+  // Reset circuit breaker for clean state
+  youtubeService.resetCircuitBreaker();
+  assert.equal(youtubeService.isQuotaExceeded(), false);
+});
+
+test('YOUTUBE SERVICE 6: normalizeVideoToTrack creates complete Track with required YouTube fields', () => {
+  const track = youtubeService.normalizeVideoToTrack(
+    'dQw4w9WgXcQ',
+    'Never Gonna Give You Up &amp; More',
+    'Rick Astley',
+    'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+    213
+  );
+
+  assert.equal(track.id, 'youtube-dQw4w9WgXcQ');
+  assert.equal(track.provider, 'youtube');
+  assert.equal(track.providerTrackId, 'dQw4w9WgXcQ');
+  assert.equal(track.youtubeVideoId, 'dQw4w9WgXcQ');
+  assert.equal(track.audioSource, 'youtube');
+  assert.equal(track.title, 'Never Gonna Give You Up & More'); // entities decoded
+  assert.equal(track.artist, 'Rick Astley');
+  assert.equal(track.duration, 213);
+  assert.equal(track.durationMs, 213000);
+  assert.equal(track.isPlayable, true);
+  assert.ok(track.coverGradient);
+});
+

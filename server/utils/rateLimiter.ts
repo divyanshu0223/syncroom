@@ -132,3 +132,11 @@ export const spotifyRateLimiter = createApiRateLimiter({
   prefix: 'spotify',
   message: 'Too many Spotify requests. Please slow down.',
 });
+
+export const youtubeRateLimiter = createApiRateLimiter({
+  max: parseInt(process.env.RATE_LIMIT_YOUTUBE_MAX || '60', 10),
+  windowMs: 60000,
+  prefix: 'youtube',
+  message: 'Too many YouTube search requests. Please slow down.',
+});
+

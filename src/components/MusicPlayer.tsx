@@ -307,8 +307,9 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
                 youtubePlaybackProvider.unMute();
                 youtubePlaybackProvider.setVolume(100);
                 setVolume(100);
-                youtubePlaybackProvider.resume();
+                youtubePlaybackProvider.play().catch(() => {});
                 enableAudio();
+
               }}
               className="px-2.5 py-1 rounded-md bg-red-500 hover:bg-red-600 text-white font-semibold text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer animate-pulse"
               title="Click to unmute and enable audio"

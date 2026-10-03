@@ -584,6 +584,10 @@ export class YouTubePlaybackProvider implements PlaybackProvider {
     }
   }
 
+  public async resume(): Promise<void> {
+    return this.play();
+  }
+
   public pause(): void {
     if (this.player && this.isPlayerReady) {
       try {

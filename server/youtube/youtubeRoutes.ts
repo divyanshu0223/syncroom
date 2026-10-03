@@ -1,30 +1,35 @@
 import { Router, Request, Response } from 'express';
 import { youtubeService } from './youtubeService';
-import { spotifyRateLimiter } from '../utils/rateLimiter';
+import { youtubeRateLimiter } from '../utils/rateLimiter';
 import { logger } from '../utils/logger';
 
 export const youtubeRouter = Router();
 
 /**
  * GET /api/youtube/status
- * Returns whether YouTube API key is configured on the server.
+ * Returns whether YouTube API key is configured on the server and current quota state.
  */
 youtubeRouter.get('/status', (_req: Request, res: Response) => {
   const configured = youtubeService.isConfigured();
+  const quotaExceeded = youtubeService.isQuotaExceeded();
   return res.json({
     configured,
+    quotaExceeded,
+    cooldownSeconds: youtubeService.getQuotaCooldownSeconds(),
     provider: 'youtube',
     message: configured
-      ? 'YouTube API is configured.'
+      ? quotaExceeded
+        ? 'YouTube search quota is currently exhausted. Direct link playback is still supported.'
+        : 'YouTube API is configured.'
       : 'YOUTUBE_API_KEY is not set in environment.',
   });
 });
 
 /**
  * GET /api/youtube/search
- * Searches tracks on YouTube using official YouTube Data API v3.
+ * Searches tracks on YouTube using official YouTube Data API v3 with caching and rate limiting.
  */
-youtubeRouter.get('/search', spotifyRateLimiter, async (req: Request, res: Response) => {
+youtubeRouter.get('/search', youtubeRateLimiter, async (req: Request, res: Response) => {
   const query = (req.query.q as string) || '';
   if (!query.trim()) {
     return res.json({ tracks: [], configured: youtubeService.isConfigured() });
@@ -43,9 +48,15 @@ youtubeRouter.get('/search', spotifyRateLimiter, async (req: Request, res: Respo
     return res.json({ tracks, configured: true });
   } catch (err: any) {
     const statusCode = typeof err.statusCode === 'number' ? err.statusCode : 500;
+    const isQuota = err.code === 'YOUTUBE_QUOTA_EXCEEDED' || statusCode === 429;
+    if (isQuota) {
+      res.setHeader('Retry-After', youtubeService.getQuotaCooldownSeconds() || 900);
+    }
     return res.status(statusCode).json({
       tracks: [],
       configured: true,
+      quotaExceeded: isQuota,
+      retryAfterSeconds: isQuota ? youtubeService.getQuotaCooldownSeconds() : undefined,
       error: err.message || 'Failed to search YouTube tracks.',
       code: err.code || 'YOUTUBE_SEARCH_FAILED',
     });
@@ -56,7 +67,7 @@ youtubeRouter.get('/search', spotifyRateLimiter, async (req: Request, res: Respo
  * POST /api/youtube/find-match
  * Finds the corresponding YouTube video for a given song title and artist.
  */
-youtubeRouter.post('/find-match', spotifyRateLimiter, async (req: Request, res: Response) => {
+youtubeRouter.post('/find-match', youtubeRateLimiter, async (req: Request, res: Response) => {
   const { title, artist } = req.body || {};
   if (!title || typeof title !== 'string' || !title.trim()) {
     return res.status(400).json({ error: 'Title is required to find YouTube match.' });
@@ -80,10 +91,15 @@ youtubeRouter.post('/find-match', spotifyRateLimiter, async (req: Request, res: 
     });
   } catch (err: any) {
     const statusCode = typeof err.statusCode === 'number' ? err.statusCode : 500;
+    const isQuota = err.code === 'YOUTUBE_QUOTA_EXCEEDED' || statusCode === 429;
+    if (isQuota) {
+      res.setHeader('Retry-After', youtubeService.getQuotaCooldownSeconds() || 900);
+    }
     return res.status(statusCode).json({
       track: null,
       videoId: null,
       configured: true,
+      quotaExceeded: isQuota,
       error: err.message || 'Failed to find YouTube match.',
       code: err.code || 'YOUTUBE_MATCH_FAILED',
     });
@@ -94,7 +110,7 @@ youtubeRouter.post('/find-match', spotifyRateLimiter, async (req: Request, res: 
  * GET /api/youtube/video/:videoId
  * Fetches single video metadata by YouTube video ID.
  */
-youtubeRouter.get('/video/:videoId', spotifyRateLimiter, async (req: Request, res: Response) => {
+youtubeRouter.get('/video/:videoId', youtubeRateLimiter, async (req: Request, res: Response) => {
   const videoId = req.params.videoId;
   if (!videoId || !videoId.trim()) {
     return res.status(400).json({ error: 'Video ID is required.' });
@@ -118,3 +134,4 @@ youtubeRouter.get('/video/:videoId', spotifyRateLimiter, async (req: Request, re
     return res.status(500).json({ error: err.message || 'Failed to retrieve YouTube video.' });
   }
 });
+

@@ -87,12 +87,15 @@ export const AddTrackModal: React.FC<AddTrackModalProps> = ({
     }
   }, []);
 
+  const lastExecutedSearchRef = useRef<string>('');
+
   const doSearch = useCallback(async (query: string, provider: 'spotify' | 'youtube') => {
     const trimmed = query.trim();
     if (!trimmed) {
       setSearchResults([]);
       setSearchError(null);
       setIsSearching(false);
+      lastExecutedSearchRef.current = '';
       return;
     }
 
@@ -116,9 +119,16 @@ export const AddTrackModal: React.FC<AddTrackModalProps> = ({
       }
     }
 
+    const normToken = `${provider}:${trimmed.toLowerCase().replace(/\s+/g, ' ')}`;
+    if (normToken === lastExecutedSearchRef.current && searchResults.length > 0) {
+      return;
+    }
+
     setIsSearching(true);
     setSearchError(null);
     setActionError(null);
+    lastExecutedSearchRef.current = normToken;
+
     try {
       if (provider === 'youtube') {
         const results = await youtubeMusicProvider.searchTracks(trimmed);
@@ -134,20 +144,27 @@ export const AddTrackModal: React.FC<AddTrackModalProps> = ({
     } finally {
       setIsSearching(false);
     }
-  }, [handleResolveUrl]);
+  }, [handleResolveUrl, searchResults.length]);
 
+  // Only debounce search-as-you-type for Spotify (preserves YouTube quota)
   useEffect(() => {
     if (activeTab !== 'search') return;
+    if (searchProvider !== 'spotify') return; // Do NOT auto-search on keystroke for YouTube!
+
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
-    debounceRef.current = setTimeout(() => {
-      doSearch(searchQuery, searchProvider);
-    }, 300);
+
+    if (searchQuery.trim().length >= 2) {
+      debounceRef.current = setTimeout(() => {
+        doSearch(searchQuery, 'spotify');
+      }, 400);
+    }
+
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [searchQuery, searchProvider, doSearch, activeTab]);
+  }, [searchQuery, searchProvider, activeTab, doSearch]);
 
   if (!isOpen) return null;
 
@@ -164,25 +181,49 @@ export const AddTrackModal: React.FC<AddTrackModalProps> = ({
     setActionError(null);
     setMatchingTrackId(track.id);
     try {
-      // If already a YouTube track, add directly
-      if (track.provider === 'youtube' && track.youtubeVideoId) {
+      // 1. If already a YouTube track, add directly
+      if (track.provider === 'youtube' && (track.youtubeVideoId || track.providerTrackId)) {
         handleAdd(track, `${track.id}-yt`);
         return;
       }
 
-      // Search real YouTube API for closest match
-      const ytTrack = await youtubeMusicProvider.findMatch(track.title, track.artist);
-      if (!ytTrack) {
-        setActionError(`No YouTube match found for "${track.title}" by ${track.artist}.`);
+      // 2. If track already has a cached/stored youtubeVideoId, use it without network request!
+      if (track.youtubeVideoId) {
+        const ytTrack: Track = {
+          ...track,
+          id: `youtube-${track.youtubeVideoId}`,
+          provider: 'youtube',
+          providerTrackId: track.youtubeVideoId,
+          audioSource: 'youtube',
+          youtubeVideoId: track.youtubeVideoId,
+        };
+        handleAdd(ytTrack, `${track.id}-yt`);
         return;
       }
+
+      // 3. Search real YouTube API for closest match
+      const ytTrack = await youtubeMusicProvider.findMatch(track.title, track.artist);
+      if (!ytTrack) {
+        setActionError(`No YouTube match found for "${track.title}". You can paste its direct YouTube link in the Paste Link tab.`);
+        return;
+      }
+
+      // 4. Cache youtubeVideoId on track object so future additions reuse it
+      track.youtubeVideoId = ytTrack.youtubeVideoId || ytTrack.providerTrackId;
+
       handleAdd(ytTrack, `${track.id}-yt`);
     } catch (err: any) {
-      setActionError(err.message || 'Failed to find YouTube match');
+      const msg = err instanceof Error ? err.message : String(err || 'Failed to find YouTube match');
+      if (msg.includes('429') || msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('ratelimit')) {
+        setActionError('YouTube search limit reached. Please paste a direct YouTube video link in the Paste Link tab.');
+      } else {
+        setActionError(msg);
+      }
     } finally {
       setMatchingTrackId(null);
     }
   };
+
 
   const formatDuration = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
@@ -269,20 +310,61 @@ export const AddTrackModal: React.FC<AddTrackModalProps> = ({
           <div className="flex-1 flex flex-col min-h-[260px]">
             {/* Search Input and Catalog Toggle */}
             <div className="flex flex-col gap-2 mb-3">
-              <div className="relative">
-                <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder={searchProvider === 'youtube' ? 'Search YouTube videos & music...' : 'Search Spotify tracks, artists, albums...'}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-neutral-950/80 border border-neutral-800 rounded-xl pl-9 pr-4 py-2.5 text-xs sm:text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-amber-400 transition-colors"
-                  autoFocus
-                />
-              </div>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (searchQuery.trim()) {
+                    doSearch(searchQuery, searchProvider);
+                  }
+                }}
+                className="flex items-center gap-2"
+              >
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder={
+                      searchProvider === 'youtube'
+                        ? 'Type song title & press Enter to search YouTube...'
+                        : 'Search Spotify tracks, artists, albums...'
+                    }
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      if (searchError) setSearchError(null);
+                    }}
+                    className="w-full bg-neutral-950/80 border border-neutral-800 rounded-xl pl-9 pr-4 py-2.5 text-xs sm:text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-amber-400 transition-colors"
+                    autoFocus
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSearching || !searchQuery.trim()}
+                  className={`px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold shrink-0 transition-all flex items-center gap-1.5 shadow-sm ${
+                    searchProvider === 'youtube'
+                      ? 'bg-red-600 hover:bg-red-500 text-white shadow-red-600/20 disabled:opacity-40'
+                      : 'bg-amber-400 hover:bg-amber-300 text-neutral-950 shadow-amber-400/20 disabled:opacity-40'
+                  }`}
+                  aria-label="Execute search"
+                >
+                  {isSearching ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Search className="w-4 h-4" />
+                  )}
+                  <span>Search</span>
+                </button>
+              </form>
+
+              {searchProvider === 'youtube' && (
+                <p className="text-[11px] text-neutral-400 px-1 flex items-center justify-between">
+                  <span>Press <kbd className="px-1 py-0.5 rounded bg-neutral-800 text-neutral-300 font-mono text-[10px]">Enter</kbd> or click <strong>Search</strong> to query YouTube.</span>
+                  <span className="text-neutral-500 text-[10px]">Only searches when requested</span>
+                </p>
+              )}
 
               {/* Catalog filter pills: Spotify vs YouTube */}
-              <div className="flex items-center gap-2 text-xs">
+              <div className="flex items-center gap-2 text-xs pt-1">
                 <span className="text-[11px] text-neutral-500 font-medium">Search source:</span>
                 <div className="inline-flex rounded-lg bg-neutral-950 p-0.5 border border-neutral-800">
                   <button
@@ -298,7 +380,7 @@ export const AddTrackModal: React.FC<AddTrackModalProps> = ({
                     }`}
                   >
                     <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
-                      <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
+                      <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
                     </svg>
                     <span>Spotify</span>
                   </button>
@@ -330,46 +412,74 @@ export const AddTrackModal: React.FC<AddTrackModalProps> = ({
                   <span>Searching {searchProvider === 'youtube' ? 'YouTube' : 'Spotify'}...</span>
                 </div>
               ) : searchError ? (
-                <div className="py-8 px-4 text-center text-neutral-400 text-sm flex flex-col items-center gap-3 bg-neutral-950/60 rounded-xl border border-neutral-800">
-                  <Music className="w-8 h-8 text-amber-400/80" />
-                  <div>
-                    <p className="font-medium text-neutral-200">{searchError}</p>
-                    <p className="text-xs text-neutral-500 mt-1">
-                      {searchProvider === 'spotify'
-                        ? 'Connect Spotify, or switch to YouTube search to find music without a Spotify account.'
-                        : 'Please check your connection and search query.'}
-                    </p>
+                searchError.toLowerCase().includes('quota') ||
+                searchError.toLowerCase().includes('ratelimit') ||
+                searchError.includes('429') ||
+                searchError.toLowerCase().includes('limit reached') ? (
+                  <div className="py-6 px-4 text-center bg-red-950/30 border border-red-800/60 rounded-xl flex flex-col items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-red-900/40 border border-red-700/50 flex items-center justify-center text-red-400">
+                      <AlertCircle className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-white text-sm">YouTube Daily Search Limit Reached</h4>
+                      <p className="text-xs text-neutral-300 mt-1 max-w-sm">
+                        Google YouTube Data API search quota is currently exhausted for today. You can still play <strong>any YouTube song</strong> instantly by pasting its link in the <strong>Paste Link</strong> tab!
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('url');
+                        setSearchError(null);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-neutral-950 font-semibold text-xs transition-colors flex items-center gap-1.5 shadow-md shadow-amber-400/20"
+                    >
+                      <Link2 className="w-3.5 h-3.5" />
+                      <span>Switch to Paste Link</span>
+                    </button>
                   </div>
-                  {searchProvider === 'spotify' && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSearchProvider('youtube');
-                          if (searchQuery.trim()) doSearch(searchQuery, 'youtube');
-                        }}
-                        className="px-3.5 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-xs text-[#ff4e4e] font-semibold transition-colors flex items-center gap-1.5"
-                      >
-                        <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
-                          <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-                        </svg>
-                        <span>Switch to YouTube Search</span>
-                      </button>
-                      {onOpenImportSpotify && (
+                ) : (
+                  <div className="py-8 px-4 text-center text-neutral-400 text-sm flex flex-col items-center gap-3 bg-neutral-950/60 rounded-xl border border-neutral-800">
+                    <Music className="w-8 h-8 text-amber-400/80" />
+                    <div>
+                      <p className="font-medium text-neutral-200">{searchError}</p>
+                      <p className="text-xs text-neutral-500 mt-1">
+                        {searchProvider === 'spotify'
+                          ? 'Connect Spotify, or switch to YouTube search to find music without a Spotify account.'
+                          : 'Please check your connection and search query.'}
+                      </p>
+                    </div>
+                    {searchProvider === 'spotify' && (
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
                           onClick={() => {
-                            onClose();
-                            onOpenImportSpotify();
+                            setSearchProvider('youtube');
+                            if (searchQuery.trim()) doSearch(searchQuery, 'youtube');
                           }}
-                          className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs text-neutral-300 font-medium transition-colors"
+                          className="px-3.5 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-xs text-[#ff4e4e] font-semibold transition-colors flex items-center gap-1.5"
                         >
-                          Connect Spotify
+                          <svg className="w-3 h-3 fill-current" viewBox="0 0 24 24">
+                            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                          </svg>
+                          <span>Switch to YouTube Search</span>
                         </button>
-                      )}
-                    </div>
-                  )}
-                </div>
+                        {onOpenImportSpotify && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onClose();
+                              onOpenImportSpotify();
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs text-neutral-300 font-medium transition-colors"
+                          >
+                            Connect Spotify
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
               ) : searchQuery.trim() && searchResults.length === 0 ? (
                 <div className="py-12 text-center text-neutral-500 text-sm">
                   No matching tracks found. Try a different query.
@@ -381,6 +491,7 @@ export const AddTrackModal: React.FC<AddTrackModalProps> = ({
                 </div>
               ) : (
                 searchResults.map((track) => {
+
                   const wasSpotifyAdded = justAddedId === track.id || justAddedId === `${track.id}-spotify`;
                   const wasYouTubeAdded = justAddedId === `${track.id}-yt` || (track.provider === 'youtube' && justAddedId === track.id);
                   const isMatchingThis = matchingTrackId === track.id;
