@@ -52,13 +52,9 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
   const attachedIframeRef = React.useRef<HTMLIFrameElement | null>(null);
 
   const handleIframeRef = React.useCallback((el: HTMLIFrameElement | null) => {
-    if (el) {
-      if (attachedIframeRef.current !== el) {
-        attachedIframeRef.current = el;
-        youtubePlaybackProvider.attachIframe(el);
-      }
-    } else {
-      attachedIframeRef.current = null;
+    if (el && attachedIframeRef.current !== el) {
+      attachedIframeRef.current = el;
+      youtubePlaybackProvider.attachIframe(el);
     }
   }, []);
 
@@ -67,9 +63,11 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
       if (playbackManager.getProvider().id !== 'youtube') {
         playbackManager.setProvider(youtubePlaybackProvider);
       }
-      youtubePlaybackProvider.loadTrack(track, playerState.position || 0, playerState.isPlaying);
+      if (youtubePlaybackProvider.getCurrentTrackId() !== track.id) {
+        youtubePlaybackProvider.loadTrack(track, playerState.position || 0, playerState.isPlaying);
+      }
     }
-  }, [track?.provider, track?.id]);
+  }, [track?.provider, track?.id, playerState.isPlaying]);
   const {
     isUnlocked,
     enableAudio,
@@ -492,7 +490,6 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({
         >
           <iframe
             id="syncroom-youtube-iframe"
-            key={track.youtubeVideoId || track.providerTrackId}
             src={`https://www.youtube.com/embed/${track.youtubeVideoId || track.providerTrackId}?enablejsapi=1&autoplay=1&playsinline=1&controls=1&rel=0&modestbranding=1${typeof window !== 'undefined' && window.location.origin ? `&origin=${window.location.origin}` : ''}`}
             title={track.title}
             style={{ width: '100%', height: '100%', border: 0 }}

@@ -71,13 +71,20 @@ export class SyncEngine {
         this.isTabActive = isVisible;
 
         if (isVisible) {
-          // Returning to foreground: immediately perform drift check and resync
+          // Returning to foreground: resume drift timer and evaluate recovery
+          this.start();
           if (this.currentPlaybackState?.isPlaying) {
-            this.start();
+            const provider = playbackManager.getProvider();
+            // If the provider was paused by the browser while backgrounded, resume it cleanly without restarting
+            if (provider.id === 'youtube' || provider.id === 'spotify') {
+              if (provider.getStatus() === 'PAUSED' || provider.getStatus() === 'PLAYER_READY') {
+                provider.play().catch(() => {});
+              }
+            }
             this.checkDrift();
           }
         } else {
-          // Tab hidden / device locked: pause high-frequency drift timer to save CPU/battery
+          // Tab hidden / device locked: pause high-frequency drift timer to save CPU/battery, but DO NOT pause audio!
           if (this.driftCheckTimer) {
             clearInterval(this.driftCheckTimer);
             this.driftCheckTimer = null;

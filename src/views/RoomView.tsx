@@ -264,7 +264,9 @@ export const RoomView: React.FC<RoomViewProps> = ({
           {/* Main Music Player Stage */}
           <div
             className={`lg:col-span-7 xl:col-span-8 flex flex-col gap-4 ${
-              activeMobileTab !== 'player' ? 'hidden lg:flex' : 'flex'
+              activeMobileTab !== 'player'
+                ? 'max-lg:opacity-0 max-lg:pointer-events-none max-lg:absolute max-lg:-left-[9999px] max-lg:top-0 max-lg:h-0 max-lg:overflow-hidden flex'
+                : 'flex'
             }`}
           >
             <MusicPlayer

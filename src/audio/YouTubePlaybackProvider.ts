@@ -273,8 +273,11 @@ export class YouTubePlaybackProvider implements PlaybackProvider {
     try {
       if (this.player) {
         try {
-          if (typeof this.player.getIframe === 'function' && this.player.getIframe() === iframe) {
-            return;
+          if (typeof this.player.getIframe === 'function') {
+            const current = this.player.getIframe();
+            if (current === iframe || (current && iframe && current.id && current.id === iframe.id)) {
+              return; // Already attached to this iframe! Keep existing player!
+            }
           }
           this.player.destroy();
         } catch {}
@@ -455,6 +458,18 @@ export class YouTubePlaybackProvider implements PlaybackProvider {
       if (track.duration) {
         this.duration = track.duration;
       }
+    }
+
+    // IDEMPOTENCY GUARD: If this video is ALREADY active and playing/ready, do NOT reload from 0s!
+    if (
+      this.currentTrackId === trackId &&
+      this.currentVideoId === videoId &&
+      (this.status === 'PLAYING' || this.status === 'PLAYER_READY')
+    ) {
+      if (autoplay && this.status !== 'PLAYING') {
+        await this.play();
+      }
+      return;
     }
 
     this.currentTrackId = trackId;

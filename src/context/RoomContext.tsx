@@ -14,6 +14,7 @@ import { spotifyMusicProvider } from '../services/music/SpotifyMusicProvider';
 import { serverClock } from '../services/serverClock';
 import { saveSession, getSession, clearSession } from '../services/session';
 import { getApiBaseUrl, getRuntimeConfig } from '../config/runtime';
+import { mediaSessionService } from '../services/mediaSession';
 
 interface RoomContextType {
   currentRoom: Room | null;
@@ -164,17 +165,9 @@ export const RoomProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         // App returned to foreground / screen unlocked / PWA reopened
+        // Only reconnect if the WebSocket connection was dropped while in background
         if (socketService.getStatus() !== 'connected') {
           socketService.connect();
-        } else {
-          const stored = getSession();
-          if (stored && stored.sessionToken && currentRoomRef.current) {
-            socketService.send({
-              type: 'RECONNECT_SESSION',
-              sessionToken: stored.sessionToken,
-              sessionId: stored.sessionToken,
-            });
-          }
         }
       }
     };
@@ -1025,6 +1018,28 @@ export const RoomProvider: React.FC<{ children: React.ReactNode }> = ({ children
     audioEngine.unlock().catch(() => {});
     socketService.send({ type: 'ADMIN_PREVIOUS' });
   };
+
+  // Synchronize browser Media Session API with current track & playback state
+  useEffect(() => {
+    mediaSessionService.updateTrack(currentRoom?.currentTrack || null);
+    if (currentRoom?.playerState) {
+      mediaSessionService.updatePlaybackState(
+        currentRoom.playerState.isPlaying,
+        currentRoom.playerState.position,
+        currentRoom.currentTrack?.duration || 0
+      );
+    }
+  }, [currentRoom?.currentTrack, currentRoom?.playerState?.isPlaying, currentRoom?.playerState?.position]);
+
+  useEffect(() => {
+    mediaSessionService.setCallbacks({
+      onPlay: playPause,
+      onPause: playPause,
+      onNext: nextTrack,
+      onPrevious: previousTrack,
+      onSeek: seek,
+    });
+  }, [playPause, nextTrack, previousTrack, seek]);
 
   const selectTrack = (trackId: string) => {
     if (currentUser?.role !== 'admin') {

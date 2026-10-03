@@ -157,3 +157,55 @@ test('YOUTUBE PLAYBACK 5: parseYouTubeVideoId correctly identifies diverse YouTu
   assert.equal(res7.videoId, null);
 });
 
+test('YOUTUBE PLAYBACK 6: loadTrack idempotency preserves playback without restarting active track', async () => {
+  const provider = new YouTubePlaybackProvider();
+  const track = createMockTrack();
+
+  let loadCount = 0;
+  // Mock internal player
+  (provider as any).player = {
+    loadVideoById: () => { loadCount++; },
+    cueVideoById: () => {},
+    playVideo: () => {},
+    pauseVideo: () => {},
+    seekTo: () => {},
+    getIframe: () => ({ id: 'syncroom-youtube-iframe' }),
+  };
+  (provider as any).isPlayerReady = true;
+
+  // First load
+  await provider.loadTrack(track, 0, true);
+  assert.equal(provider.getCurrentTrackId(), track.id);
+  assert.equal(provider.getStatus(), 'PLAYING');
+  assert.equal(loadCount, 1);
+
+  // Subsequent load of the SAME track (e.g. from UI re-render, modal opening, or tab switch)
+  await provider.loadTrack(track, 0, true);
+  // Must NOT trigger another loadVideoById (which would restart from 0s)
+  assert.equal(loadCount, 1, 'loadVideoById must not be called again for active track');
+  assert.equal(provider.getStatus(), 'PLAYING');
+});
+
+test('YOUTUBE PLAYBACK 7: MediaSessionService sets track metadata and handles playback states', async () => {
+  const { mediaSessionService } = await import('../src/services/mediaSession');
+  const track = createMockTrack({ title: 'Lifecycle Anthem', artist: 'SyncArtist' });
+
+  // Update track metadata
+  mediaSessionService.updateTrack(track);
+  mediaSessionService.updatePlaybackState(true, 45, 213);
+
+  let playFired = false;
+  mediaSessionService.setCallbacks({
+    onPlay: () => { playFired = true; },
+  });
+
+  // Verify callbacks work
+  (mediaSessionService as any).callbacks.onPlay?.();
+  assert.equal(playFired, true);
+
+  // Teardown with null track
+  mediaSessionService.updateTrack(null);
+  mediaSessionService.updatePlaybackState(false);
+});
+
+
