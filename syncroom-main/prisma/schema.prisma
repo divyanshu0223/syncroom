@@ -1,0 +1,214 @@
+// Prisma Schema for SyncRoom
+// Production PostgreSQL Persistence Architecture (Phase 9)
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  LISTENER
+}
+
+enum RoomStatus {
+  ACTIVE
+  ENDED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  tokenHash String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  deviceSessions DeviceSession[]
+  roomMembers    RoomMember[]
+  adminRooms     Room[]          @relation("AdminRooms")
+  playlists      CustomPlaylist[]
+}
+
+model DeviceSession {
+  id               String    @id @default(uuid())
+  userId           String
+  roomId           String
+  sessionTokenHash String    @unique
+  role             Role      @default(LISTENER)
+  createdAt        DateTime  @default(now())
+  lastSeenAt       DateTime  @default(now())
+  expiresAt        DateTime?
+  revokedAt        DateTime?
+  userAgent        String?
+  deviceName       String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([sessionTokenHash])
+  @@index([userId])
+  @@index([roomId])
+}
+
+model Room {
+  id           String     @id @default(uuid())
+  code         String     @unique
+  name         String
+  adminUserId  String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  lastActiveAt DateTime   @default(now())
+  status       RoomStatus @default(ACTIVE)
+
+  adminUser         User               @relation("AdminRooms", fields: [adminUserId], references: [id], onDelete: Restrict)
+  deviceSessions    DeviceSession[]
+  members           RoomMember[]
+  queueItems        QueueItem[]
+  importedPlaylists ImportedPlaylist[]
+  playbackState     PlaybackState?
+  activities        AuditLog[]
+
+  @@index([code])
+  @@index([status])
+}
+
+model RoomMember {
+  id         String   @id @default(uuid())
+  roomId     String
+  userId     String
+  role       Role     @default(LISTENER)
+  joinedAt   DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  isActive   Boolean  @default(true)
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([roomId])
+  @@index([userId])
+}
+
+model Track {
+  id              String   @id @default(uuid())
+  provider        String   @default("spotify") // spotify | local | licensed
+  providerTrackId String
+  title           String
+  artist          String
+  artists         String   // JSON array string of artist names
+  album           String
+  albumArtUrl     String?
+  durationMs      Int
+  externalUrl     String?
+  createdAt       DateTime @default(now())
+
+  queueItems     QueueItem[]
+  playbackStates PlaybackState[]
+
+  @@index([provider, providerTrackId])
+}
+
+model ImportedPlaylist {
+  id                 String   @id @default(uuid())
+  roomId             String
+  provider           String   @default("spotify")
+  providerPlaylistId String
+  name               String
+  description        String?
+  imageUrl           String?
+  trackCount         Int      @default(0)
+  importedAt         DateTime @default(now())
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([roomId])
+  @@index([provider, providerPlaylistId])
+}
+
+model QueueItem {
+  id       String   @id @default(uuid())
+  roomId   String
+  trackId  String
+  position Int
+  addedAt  DateTime @default(now())
+  addedBy  String   // JSON string with { id, name, role }
+
+  room  Room  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  track Track @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@index([roomId])
+  @@index([roomId, position])
+}
+
+model PlaybackState {
+  roomId     String    @id
+  trackId    String?
+  isPlaying  Boolean   @default(false)
+  positionMs Int       @default(0)
+  startedAt  DateTime?
+  version    Int       @default(1)
+  updatedAt  DateTime  @default(now())
+
+  room  Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  track Track? @relation(fields: [trackId], references: [id], onDelete: SetNull)
+
+  @@index([roomId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  roomId    String
+  userId    String?
+  action    String
+  metadata  String?  // JSON metadata string
+  createdAt DateTime @default(now())
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([roomId])
+  @@index([roomId, createdAt])
+}
+
+model CustomPlaylist {
+  id          String   @id @default(uuid())
+  ownerId     String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner  User                  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  tracks CustomPlaylistTrack[]
+
+  @@index([ownerId])
+  @@index([ownerId, createdAt])
+  @@map("playlists")
+}
+
+model CustomPlaylistTrack {
+  id             String   @id @default(uuid())
+  playlistId     String
+  spotifyTrackId String
+  spotifyUri     String
+  title          String
+  artist         String
+  artists        String   // JSON string of string[]
+  album          String
+  durationMs     Int
+  albumArtUrl    String?
+  spotifyUrl     String?
+  position       Int
+  createdAt      DateTime @default(now())
+
+  playlist CustomPlaylist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+
+  @@index([playlistId])
+  @@index([playlistId, position])
+  @@unique([playlistId, spotifyTrackId])
+  @@map("playlist_tracks")
+}

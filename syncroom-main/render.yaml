@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: syncroom
+    runtime: node
+    plan: free
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: CLIENT_ORIGIN
+        value: https://ramkushwah1214.github.io
+      - key: DATABASE_URL
+        value: postgresql://neondb_owner:npg_GpUrkAHmO0l4@ep-summer-credit-b5wmuyp7-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require

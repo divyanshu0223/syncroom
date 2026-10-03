@@ -1,0 +1,59 @@
+{
+  "name": "react-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx server.ts",
+    "start": "node dist/server.js",
+    "start:dev": "tsx server.ts",
+    "build:client": "vite build",
+    "build:server": "esbuild server.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/server.js --packages=external",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/server.js --packages=external",
+    "preview": "vite preview",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit",
+    "test": "tsx --test tests/**/*.test.ts",
+    "test:load": "tsx tests/load/websocket_load.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate deploy",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "postinstall": "prisma generate || exit 0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@google/genai": "^2.4.0",
+    "@prisma/client": "^6.4.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "^6.1.1",
+    "dotenv": "^17.2.3",
+    "drizzle-kit": "^0.31.11",
+    "drizzle-orm": "^0.45.3",
+    "esbuild": "^0.25.0",
+    "express": "^4.21.2",
+    "firebase": "^12.19.0",
+    "firebase-admin": "^14.5.0",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "pg": "^8.23.0",
+    "prisma": "^6.4.1",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "vite": "^8.3.0",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.14.0",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.1",
+    "autoprefixer": "^10.4.21",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.21.0",
+    "typescript": "^7.0.2"
+  }
+}

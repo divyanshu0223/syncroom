@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>SyncRoom — Synchronized Music Listening Room</title>
+    <meta name="description" content="A synchronized multi-device music listening room. One room, one playlist, perfectly in sync." />
+    <meta name="theme-color" content="#08080a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SyncRoom" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="./icons/icon-192.svg" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.svg" />
+    <meta property="og:title" content="SyncRoom — Synchronized Music Listening Room" />
+    <meta property="og:description" content="A synchronized multi-device music listening room. One room, one playlist, perfectly in sync." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="./icons/icon-512.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+    <script>
+      window.__spotifySdkReady = false;
+      window.__spotifySdkReadyCallbacks = [];
+      window.onSpotifyWebPlaybackSDKReady = function() {
+        window.__spotifySdkReady = true;
+        console.log('[Spotify Playback SDK] onSpotifyWebPlaybackSDKReady callback fired.');
+        if (window.__spotifySdkReadyCallbacks) {
+          window.__spotifySdkReadyCallbacks.forEach(function(cb) {
+            try { cb(); } catch (e) { console.error(e); }
+          });
+        }
+      };
+    </script>
+    <script src="https://sdk.scdn.co/spotify-player.js"></script>
+    <script type="module" crossorigin src="/syncroom/assets/index-D3NWqgmP.js"></script>
+    <link rel="stylesheet" crossorigin href="/syncroom/assets/index-CgOCA3s_.css">
+  </head>
+  <body class="bg-[#08080a] text-neutral-100 antialiased selection:bg-amber-500/20 selection:text-amber-200 min-h-screen">
+    <div id="root"></div>
+  </body>
+</html>
+

@@ -1,0 +1,335 @@
+import { Track } from '../../src/types';
+import { logger } from '../utils/logger';
+
+export interface YouTubeSearchResult {
+  videoId: string;
+  title: string;
+  channelTitle: string;
+  thumbnailUrl: string | null;
+  durationSeconds: number;
+}
+
+// In-memory cache for search queries and track matches to strictly preserve API quota
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
+const SEARCH_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const MATCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+const searchCache = new Map<string, CacheEntry<Track[]>>();
+const matchCache = new Map<string, CacheEntry<Track | null>>();
+const videoCache = new Map<string, CacheEntry<Track | null>>();
+
+const GRADIENT_PALETTES = [
+  { from: '#18181b', via: '#27272a', to: '#09090b', accent: '#ff0000', pattern: 'geometry' as const },
+  { from: '#1e1b4b', via: '#0f172a', to: '#020617', accent: '#f43f5e', pattern: 'aurora' as const },
+  { from: '#292524', via: '#1c1917', to: '#0c0a09', accent: '#f59e0b', pattern: 'rings' as const },
+  { from: '#134e4a', via: '#042f2e', to: '#021614', accent: '#ec4899', pattern: 'grid' as const },
+  { from: '#312e81', via: '#1e1b4b', to: '#0f0e17', accent: '#ef4444', pattern: 'waves' as const },
+];
+
+function generateCoverGradient(id: string) {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash << 5) - hash + id.charCodeAt(i);
+    hash |= 0;
+  }
+  const idx = Math.abs(hash) % GRADIENT_PALETTES.length;
+  return GRADIENT_PALETTES[idx];
+}
+
+/**
+ * Decodes standard HTML entities commonly returned by YouTube Data API.
+ */
+export function decodeHtmlEntities(input: string): string {
+  if (!input) return '';
+  return input
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)));
+}
+
+/**
+ * Parses ISO 8601 duration (e.g. PT3M45S, PT1H2M3S, PT52S) into seconds.
+ */
+export function parseIso8601Duration(isoDuration: string): number {
+  if (!isoDuration || typeof isoDuration !== 'string') return 0;
+  const match = isoDuration.match(/P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?/i);
+  if (!match) return 0;
+  const days = parseInt(match[1] || '0', 10);
+  const hours = parseInt(match[2] || '0', 10);
+  const minutes = parseInt(match[3] || '0', 10);
+  const seconds = parseInt(match[4] || '0', 10);
+  return days * 86400 + hours * 3600 + minutes * 60 + seconds;
+}
+
+export const parseIsoDuration = parseIso8601Duration;
+
+export class YouTubeService {
+  private getApiKey(): string | null {
+    const key = process.env.YOUTUBE_API_KEY?.trim();
+    return key || null;
+  }
+
+  public isConfigured(): boolean {
+    return Boolean(this.getApiKey());
+  }
+
+  /**
+   * Normalizes a raw YouTube video item into a SyncRoom Track.
+   */
+  public normalizeVideoToTrack(
+    videoId: string,
+    title: string,
+    channelTitle: string,
+    thumbnailUrl: string | null,
+    durationSeconds: number,
+  ): Track {
+    const cleanTitle = decodeHtmlEntities(title);
+    const cleanArtist = decodeHtmlEntities(channelTitle);
+    const duration = Math.max(1, durationSeconds);
+
+    return {
+      id: `youtube-${videoId}`,
+      provider: 'youtube',
+      providerTrackId: videoId,
+      title: cleanTitle,
+      artist: cleanArtist,
+      artists: [cleanArtist],
+      album: 'YouTube',
+      albumArtUrl: thumbnailUrl,
+      durationMs: duration * 1000,
+      duration,
+      externalUrl: `https://www.youtube.com/watch?v=${videoId}`,
+      isPlayable: true,
+      playbackStatus: 'AVAILABLE',
+      restrictionReason: null,
+      spotifyIsPlayable: null,
+      audioSource: 'youtube',
+      youtubeVideoId: videoId,
+      coverGradient: generateCoverGradient(videoId),
+    };
+  }
+
+  /**
+   * Searches YouTube Data API v3 for video results matching the query.
+   */
+  public async searchTracks(query: string, maxResults = 10): Promise<Track[]> {
+    const trimmed = query.trim();
+    if (!trimmed) return [];
+
+    const apiKey = this.getApiKey();
+    if (!apiKey) {
+      const err: any = new Error('YouTube API is not configured on the server. Please set YOUTUBE_API_KEY.');
+      err.code = 'YOUTUBE_NOT_CONFIGURED';
+      err.statusCode = 503;
+      throw err;
+    }
+
+    const cacheKey = `search:${trimmed.toLowerCase()}:${maxResults}`;
+    const cached = searchCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+
+    try {
+      // 1. Search videos
+      const searchUrl = new URL('https://www.googleapis.com/youtube/v3/search');
+      searchUrl.searchParams.set('part', 'snippet');
+      searchUrl.searchParams.set('type', 'video');
+      searchUrl.searchParams.set('maxResults', String(Math.min(maxResults, 20)));
+      searchUrl.searchParams.set('q', trimmed);
+      searchUrl.searchParams.set('key', apiKey);
+
+      const searchRes = await fetch(searchUrl.toString(), {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      });
+
+      if (!searchRes.ok) {
+        const errorBody = await searchRes.text();
+        let parsed: any;
+        try { parsed = JSON.parse(errorBody); } catch {}
+        const errorReason = parsed?.error?.errors?.[0]?.reason || parsed?.error?.message || errorBody;
+
+        if (searchRes.status === 403 && (errorReason.includes('quota') || errorReason.includes('Quota'))) {
+          const quotaErr: any = new Error('YouTube API quota exceeded. Please try again later.');
+          quotaErr.code = 'YOUTUBE_QUOTA_EXCEEDED';
+          quotaErr.statusCode = 429;
+          throw quotaErr;
+        }
+
+        const apiErr: any = new Error(`YouTube API request failed (${searchRes.status}): ${errorReason}`);
+        apiErr.code = 'YOUTUBE_API_ERROR';
+        apiErr.statusCode = searchRes.status >= 400 && searchRes.status < 600 ? searchRes.status : 500;
+        throw apiErr;
+      }
+
+      const searchData = await searchRes.json();
+      const items: any[] = searchData.items || [];
+      const videoIds = items.map((item) => item.id?.videoId).filter(Boolean);
+
+      if (videoIds.length === 0) {
+        searchCache.set(cacheKey, { data: [], expiresAt: Date.now() + SEARCH_CACHE_TTL_MS });
+        return [];
+      }
+
+      // 2. Fetch video details to retrieve accurate durations
+      const detailsUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
+      detailsUrl.searchParams.set('part', 'snippet,contentDetails');
+      detailsUrl.searchParams.set('id', videoIds.join(','));
+      detailsUrl.searchParams.set('key', apiKey);
+
+      const detailsRes = await fetch(detailsUrl.toString(), {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      });
+
+      const detailsMap = new Map<string, { durationSeconds: number; title: string; channelTitle: string; thumbnailUrl: string | null }>();
+
+      if (detailsRes.ok) {
+        const detailsData = await detailsRes.json();
+        for (const v of detailsData.items || []) {
+          const duration = parseIso8601Duration(v.contentDetails?.duration || '');
+          const thumb =
+            v.snippet?.thumbnails?.high?.url ||
+            v.snippet?.thumbnails?.medium?.url ||
+            v.snippet?.thumbnails?.default?.url ||
+            null;
+          detailsMap.set(v.id, {
+            durationSeconds: duration,
+            title: v.snippet?.title || '',
+            channelTitle: v.snippet?.channelTitle || '',
+            thumbnailUrl: thumb,
+          });
+        }
+      }
+
+      // 3. Transform to Track[]
+      const tracks: Track[] = items
+        .map((item) => {
+          const vId = item.id?.videoId;
+          if (!vId) return null;
+          const details = detailsMap.get(vId);
+          const title = details?.title || item.snippet?.title || 'Unknown Title';
+          const channel = details?.channelTitle || item.snippet?.channelTitle || 'YouTube';
+          const thumb =
+            details?.thumbnailUrl ||
+            item.snippet?.thumbnails?.high?.url ||
+            item.snippet?.thumbnails?.medium?.url ||
+            item.snippet?.thumbnails?.default?.url ||
+            null;
+          const durationSec = details?.durationSeconds || 180;
+
+          return this.normalizeVideoToTrack(vId, title, channel, thumb, durationSec);
+        })
+        .filter((t): t is Track => t !== null);
+
+      searchCache.set(cacheKey, { data: tracks, expiresAt: Date.now() + SEARCH_CACHE_TTL_MS });
+      return tracks;
+    } catch (err: any) {
+      logger.warn('[YouTubeService] searchTracks exception', { error: err.message, code: err.code });
+      throw err;
+    }
+  }
+
+  /**
+   * Finds the best matching YouTube video for a given song title and optional artist.
+   * Useful when user clicks [YouTube] on a Spotify search result or playing track.
+   */
+  public async findMatch(title: string, artist?: string): Promise<Track | null> {
+    const cleanTitle = title.trim();
+    if (!cleanTitle) return null;
+
+    const cacheKey = `match:${cleanTitle.toLowerCase()}::${(artist || '').toLowerCase()}`;
+    const cached = matchCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+
+    const searchQuery = artist ? `${cleanTitle} ${artist}` : cleanTitle;
+    const tracks = await this.searchTracks(searchQuery, 5);
+
+    if (tracks.length === 0) {
+      matchCache.set(cacheKey, { data: null, expiresAt: Date.now() + MATCH_CACHE_TTL_MS });
+      return null;
+    }
+
+    // Pick best match: prefer result with title/artist match, or first result
+    const best = tracks[0];
+    matchCache.set(cacheKey, { data: best, expiresAt: Date.now() + MATCH_CACHE_TTL_MS });
+    return best;
+  }
+
+  /**
+   * Fetches video metadata by video ID.
+   */
+  public async getVideoById(videoId: string): Promise<Track | null> {
+    const cleanId = videoId.trim();
+    if (!cleanId) return null;
+
+    const cacheKey = `video:${cleanId}`;
+    const cached = videoCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+
+    const apiKey = this.getApiKey();
+    if (!apiKey) {
+      const err: any = new Error('YouTube API is not configured on the server. Please set YOUTUBE_API_KEY.');
+      err.code = 'YOUTUBE_NOT_CONFIGURED';
+      err.statusCode = 503;
+      throw err;
+    }
+
+    try {
+      const detailsUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
+      detailsUrl.searchParams.set('part', 'snippet,contentDetails');
+      detailsUrl.searchParams.set('id', cleanId);
+      detailsUrl.searchParams.set('key', apiKey);
+
+      const res = await fetch(detailsUrl.toString(), {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      });
+
+      if (!res.ok) {
+        return null;
+      }
+
+      const data = await res.json();
+      const item = data.items?.[0];
+      if (!item) {
+        return null;
+      }
+
+      const duration = parseIso8601Duration(item.contentDetails?.duration || '');
+      const thumb =
+        item.snippet?.thumbnails?.high?.url ||
+        item.snippet?.thumbnails?.medium?.url ||
+        item.snippet?.thumbnails?.default?.url ||
+        null;
+
+      const track = this.normalizeVideoToTrack(
+        cleanId,
+        item.snippet?.title || 'Unknown Title',
+        item.snippet?.channelTitle || 'YouTube',
+        thumb,
+        duration,
+      );
+
+      videoCache.set(cacheKey, { data: track, expiresAt: Date.now() + MATCH_CACHE_TTL_MS });
+      return track;
+    } catch (err: any) {
+      logger.warn('[YouTubeService] getVideoById exception', { error: err.message, videoId });
+      return null;
+    }
+  }
+}
+
+export const youtubeService = new YouTubeService();

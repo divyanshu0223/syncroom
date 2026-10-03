@@ -1,0 +1,44 @@
+# ==============================================================================
+# SyncRoom - Production Docker Compose Specification
+# ==============================================================================
+# NOTE ON DATABASE CONFIGURATION:
+# In accordance with Phase 8 architecture preparation, PostgreSQL/Prisma database
+# integration is scheduled as a dedicated subsequent phase.
+# The service below runs in authoritative in-memory mode when DATABASE_URL is unset.
+# Real database containers or managed Cloud SQL instances will be attached in Phase 9.
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  syncroom:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: syncroom:latest
+    container_name: syncroom-app
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - CLIENT_ORIGIN=${CLIENT_ORIGIN:-}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
+      - APP_URL=${APP_URL:-}
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
+      - SPOTIFY_REDIRECT_URI=${SPOTIFY_REDIRECT_URI:-}
+      - SESSION_MAX_AGE_DAYS=${SESSION_MAX_AGE_DAYS:-7}
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-60000}
+      - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-100}
+      - RATE_LIMIT_AUTH_MAX=${RATE_LIMIT_AUTH_MAX:-30}
+      - RATE_LIMIT_SPOTIFY_MAX=${RATE_LIMIT_SPOTIFY_MAX:-40}
+      # Database connection variables (Pending Phase 9 configuration)
+      - DATABASE_URL=${DATABASE_URL:-}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

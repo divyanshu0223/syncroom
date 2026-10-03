@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <defs>
+    <radialGradient id="glow192" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#08080a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bg192" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1f2937"/>
+      <stop offset="100%" stop-color="#08080a"/>
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="42" fill="url(#bg192)"/>
+  <rect width="188" height="188" x="2" y="2" rx="40" fill="none" stroke="#374151" stroke-width="3"/>
+  <circle cx="96" cy="96" r="75" fill="url(#glow192)"/>
+  <g transform="translate(24, 24) scale(6)" stroke="#f3f4f6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <circle cx="12" cy="12" r="2.5" fill="#f59e0b" stroke="#f59e0b"/>
+    <path d="M7.5 9a6.5 6.5 0 0 0 0 6" stroke="#e5e7eb"/>
+    <path d="M16.5 9a6.5 6.5 0 0 1 0 6" stroke="#e5e7eb"/>
+    <path d="M4 6.5a11 11 0 0 0 0 11" stroke="#9ca3af"/>
+    <path d="M20 6.5a11 11 0 0 1 0 11" stroke="#9ca3af"/>
+  </g>
+</svg>

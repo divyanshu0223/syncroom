@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>SyncRoom — Synchronized Music Listening Room</title>
+    <meta name="description" content="A synchronized multi-device music listening room. One room, one playlist, perfectly in sync." />
+    <meta name="theme-color" content="#08080a" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SyncRoom" />
+    <link rel="manifest" href="/syncroom/assets/manifest-M9FqSpZa.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/syncroom/assets/icon-192-ckt7f9-p.svg" />
+    <link rel="apple-touch-icon" href="/syncroom/assets/icon-192-ckt7f9-p.svg" />
+    <meta property="og:title" content="SyncRoom — Synchronized Music Listening Room" />
+    <meta property="og:description" content="A synchronized multi-device music listening room. One room, one playlist, perfectly in sync." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20512%20512'%20width='512'%20height='512'%3e%3cdefs%3e%3cradialGradient%20id='glow'%20cx='50%25'%20cy='50%25'%20r='50%25'%3e%3cstop%20offset='0%25'%20stop-color='%23f59e0b'%20stop-opacity='0.35'/%3e%3cstop%20offset='100%25'%20stop-color='%2308080a'%20stop-opacity='0'/%3e%3c/radialGradient%3e%3clinearGradient%20id='bg'%20x1='0%25'%20y1='0%25'%20x2='100%25'%20y2='100%25'%3e%3cstop%20offset='0%25'%20stop-color='%231f2937'/%3e%3cstop%20offset='100%25'%20stop-color='%2308080a'/%3e%3c/linearGradient%3e%3c/defs%3e%3crect%20width='512'%20height='512'%20rx='112'%20fill='url(%23bg)'/%3e%3crect%20width='504'%20height='504'%20x='4'%20y='4'%20rx='108'%20fill='none'%20stroke='%23374151'%20stroke-width='8'/%3e%3ccircle%20cx='256'%20cy='256'%20r='200'%20fill='url(%23glow)'/%3e%3cg%20transform='translate(64,%2064)%20scale(16)'%20stroke='%23f3f4f6'%20stroke-width='2.2'%20stroke-linecap='round'%20stroke-linejoin='round'%20fill='none'%3e%3ccircle%20cx='12'%20cy='12'%20r='2.5'%20fill='%23f59e0b'%20stroke='%23f59e0b'/%3e%3cpath%20d='M7.5%209a6.5%206.5%200%200%200%200%206'%20stroke='%23e5e7eb'/%3e%3cpath%20d='M16.5%209a6.5%206.5%200%200%201%200%206'%20stroke='%23e5e7eb'/%3e%3cpath%20d='M4%206.5a11%2011%200%200%200%200%2011'%20stroke='%239ca3af'/%3e%3cpath%20d='M20%206.5a11%2011%200%200%201%200%2011'%20stroke='%239ca3af'/%3e%3c/g%3e%3c/svg%3e" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+    <script>
+      window.__spotifySdkReady = false;
+      window.__spotifySdkReadyCallbacks = [];
+      window.onSpotifyWebPlaybackSDKReady = function() {
+        window.__spotifySdkReady = true;
+        console.log('[Spotify Playback SDK] onSpotifyWebPlaybackSDKReady callback fired.');
+        if (window.__spotifySdkReadyCallbacks) {
+          window.__spotifySdkReadyCallbacks.forEach(function(cb) {
+            try { cb(); } catch (e) { console.error(e); }
+          });
+        }
+      };
+    </script>
+    <script src="https://sdk.scdn.co/spotify-player.js"></script>
+    <script type="module" crossorigin src="/syncroom/assets/index-CdhL1WzY.js"></script>
+    <link rel="stylesheet" crossorigin href="/syncroom/assets/index-f293IJLc.css">
+  </head>
+  <body class="bg-[#08080a] text-neutral-100 antialiased selection:bg-amber-500/20 selection:text-amber-200 min-h-screen">
+    <div id="root"></div>
+  </body>
+</html>
+

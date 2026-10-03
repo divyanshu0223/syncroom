@@ -1,0 +1,6 @@
+{
+  "name": "SyncRoom",
+  "description": "A synchronized multi-device music listening room. One room, one playlist, perfectly in sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
